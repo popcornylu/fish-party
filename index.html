@@ -32,6 +32,7 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 let W, H, dpr;
 let WATER_Y; // y-coordinate of water surface
+let knobY; // y-coordinate of cast knobs (set in resize)
 let layoutReady = false;
 
 function resize() {
@@ -44,6 +45,8 @@ function resize() {
   canvas.style.height = H + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   WATER_Y = H * 0.28;
+
+  knobY = H - 50;
 
   // Relayout players and fish (guard: skip on initial call before vars are defined)
   if (layoutReady) {
@@ -80,6 +83,7 @@ const HOOK_CATCH_RETRACT_SPEED = 5;
 const MAX_HOOK_LENGTH_RATIO = 0.85; // fraction of underwater depth
 const SWING_SPEED = 1.8; // radians per second
 const SWING_RANGE = Math.PI / 3; // 60 degrees
+const KNOB_RADIUS = 30;
 
 const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12'];
 const PLAYER_NAMES = ['玩家1', '玩家2', '玩家3', '玩家4'];
@@ -350,14 +354,14 @@ function lerpColor(a, b, t) {
 function drawChargeEffect(p, time) {
   if (p.hookState !== HOOK_STATES.CHARGE) return;
 
-  // Expanding rings (visible around finger)
+  // Expanding rings from knob (visible around finger)
   for (const ring of p.chargeRings) {
     const chargeColor = lerpColor('#3498db', '#f1c40f', p.chargeLevel);
     ctx.strokeStyle = chargeColor;
     ctx.globalAlpha = ring.opacity;
     ctx.lineWidth = 2 + p.chargeLevel * 2;
     ctx.beginPath();
-    ctx.arc(p.boatX, p.boatY, ring.radius, 0, Math.PI * 2);
+    ctx.arc(p.boatX, knobY, ring.radius, 0, Math.PI * 2);
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
@@ -400,8 +404,8 @@ function createPlayer(index, total) {
 function drawBoat(p, time) {
   const { boatX, boatY, color } = p;
 
-  // Glow ring when IDLE or CHARGE
-  if (p.hookState === HOOK_STATES.IDLE || p.hookState === HOOK_STATES.CHARGE) {
+  // Glow ring when IDLE
+  if (p.hookState === HOOK_STATES.IDLE) {
     const glow = 0.3 + 0.3 * Math.sin(time * 3 + p.glowPhase);
     ctx.strokeStyle = `rgba(255,255,255,${glow})`;
     ctx.lineWidth = 3;
@@ -822,6 +826,63 @@ function drawMenuButtons() {
   ctx.textBaseline = 'alphabetic';
 }
 
+// --- Knobs ---
+function drawKnobs() {
+  for (const p of players) {
+    if (p.isAI) continue;
+    const cx = p.boatX;
+    const cy = knobY;
+    const isActive = p.hookState === HOOK_STATES.IDLE || p.hookState === HOOK_STATES.CHARGE;
+    const isCharging = p.hookState === HOOK_STATES.CHARGE;
+
+    ctx.save();
+
+    // Dimmed when hook is out
+    if (!isActive) ctx.globalAlpha = 0.35;
+
+    // Filled circle background
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, KNOB_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Highlight gradient
+    const grad = ctx.createRadialGradient(cx, cy - KNOB_RADIUS * 0.3, 0, cx, cy, KNOB_RADIUS);
+    grad.addColorStop(0, 'rgba(255,255,255,0.35)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, KNOB_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Charge progress arc
+    if (isCharging) {
+      const chargeColor = lerpColor('#3498db', '#f1c40f', p.chargeLevel);
+      ctx.strokeStyle = chargeColor;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, KNOB_RADIUS + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p.chargeLevel);
+      ctx.stroke();
+    }
+
+    // Border
+    ctx.strokeStyle = isCharging ? '#fff' : 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, KNOB_RADIUS, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Player label inside knob
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('P' + (p.index + 1), cx, cy);
+
+    ctx.restore();
+  }
+}
+
 // --- Play Screen ---
 function startGameFromSlots() {
   const activeSlots = [];
@@ -894,6 +955,7 @@ function drawPlay(time) {
     drawChargeEffect(p, time);
   }
 
+  drawKnobs();
   drawBubbles();
   drawScoreTexts();
   drawHUD();
@@ -995,13 +1057,13 @@ canvas.addEventListener('pointerdown', (e) => {
       startGameFromSlots();
     }
   } else if (screen === 'play') {
-    // Find closest boat within 70px (human only)
+    // Find closest knob within touch range (human only)
     let closest = null;
-    let closestDist = 70;
+    let closestDist = KNOB_RADIUS + 15; // extra padding for touch
     for (const p of players) {
       if (p.isAI) continue;
       const dx = x - p.boatX;
-      const dy = y - p.boatY;
+      const dy = y - knobY;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < closestDist) {
         closest = p;
