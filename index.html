@@ -71,7 +71,7 @@ resize();
 window.addEventListener('resize', resize);
 
 // --- Version ---
-const VERSION = 'v1.2.2';
+const VERSION = 'v1.2.3';
 
 // --- Constants ---
 const HOOK_STATES = { IDLE: 0, DROP: 1, CATCH: 2, RETRACT: 3, CHARGE: 4 };
@@ -399,6 +399,9 @@ function createPlayer(index, total) {
     chargeLevel: 0,
     chargeRings: [],
     effectiveMaxHookLength: 0,
+    pointerId: -1,
+    chargeStartY: 0,
+    lastPointerY: -1,
   };
 }
 
@@ -531,8 +534,7 @@ function updatePlayer(p, dt, time) {
       if (p.hookAngle > SWING_RANGE) { p.hookAngle = SWING_RANGE; p.swingDir = -1; }
       if (p.hookAngle < -SWING_RANGE) { p.hookAngle = -SWING_RANGE; p.swingDir = 1; }
       p.hookLength = 0;
-      // Increase charge
-      p.chargeLevel = Math.min(1, p.chargeLevel + dt / CHARGE_DURATION);
+      // chargeLevel is set by pointermove (drag up to reduce)
       // Spawn expanding rings periodically
       if (Math.random() < 0.3 || p.chargeRings.length === 0) {
         p.chargeRings.push({ radius: 20, opacity: 0.8 });
@@ -1085,31 +1087,53 @@ canvas.addEventListener('pointerdown', (e) => {
     }
     if (closest && closest.hookState === HOOK_STATES.IDLE) {
       closest.hookState = HOOK_STATES.CHARGE;
-      closest.chargeLevel = 0;
+      closest.chargeLevel = MIN_CHARGE; // start at min; drag up to increase
       closest.chargeRings = [];
       closest.hookDropAngle = closest.hookAngle;
+      closest.pointerId = e.pointerId;
+      closest.chargeStartY = y;
+      closest.lastPointerY = -1; // sentinel: no move yet (quick tap)
     }
   } else if (screen === 'gameover') {
     initMenu();
   }
 });
 
-function releaseCharge() {
+function releaseCharge(pointerId) {
   if (screen !== 'play') return;
   for (const p of players) {
     if (p.isAI || p.hookState !== HOOK_STATES.CHARGE) continue;
-    const level = Math.max(MIN_CHARGE, p.chargeLevel);
+    if (p.pointerId !== pointerId) continue;
+    // Quick tap (no pointermove fired) → max power
+    const level = (p.lastPointerY === -1) ? 1 : Math.max(MIN_CHARGE, p.chargeLevel);
     p.effectiveMaxHookLength = level * p.maxHookLength;
     p.hookDropAngle = p.hookAngle;
     p.hookState = HOOK_STATES.DROP;
     p.hookLength = 0;
+    p.pointerId = -1;
     spawnBubbles(p.boatX, p.boatY + 15, 3 + Math.floor(level * 5));
   }
 }
 
-canvas.addEventListener('pointerup', (e) => { releaseCharge(); });
-canvas.addEventListener('pointercancel', (e) => { releaseCharge(); });
-canvas.addEventListener('pointerleave', (e) => { releaseCharge(); });
+const DRAG_RANGE = 150; // pixels of upward drag for 0% → 100% adjustment
+
+canvas.addEventListener('pointermove', (e) => {
+  if (screen !== 'play') return;
+  const rect = canvas.getBoundingClientRect();
+  const y = e.clientY - rect.top;
+  for (const p of players) {
+    if (p.isAI || p.hookState !== HOOK_STATES.CHARGE) continue;
+    if (p.pointerId !== e.pointerId) continue;
+    // Drag up from start → increase charge (start=MIN_CHARGE, drag up full range=1)
+    const dragUp = Math.max(0, p.chargeStartY - y);
+    p.chargeLevel = Math.min(1, MIN_CHARGE + dragUp / DRAG_RANGE);
+    p.lastPointerY = y;
+  }
+});
+
+canvas.addEventListener('pointerup', (e) => { releaseCharge(e.pointerId); });
+canvas.addEventListener('pointercancel', (e) => { releaseCharge(e.pointerId); });
+canvas.addEventListener('pointerleave', (e) => { releaseCharge(e.pointerId); });
 
 // --- Main Loop ---
 let globalTime = 0;
