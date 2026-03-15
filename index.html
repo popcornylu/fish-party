@@ -64,10 +64,10 @@ const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12'];
 const PLAYER_NAMES = ['玩家1', '玩家2', '玩家3', '玩家4'];
 
 const FISH_TYPES = [
-  { name: 'small',  points: 10,  w: 30, h: 15, speed: 2.5, weight: 50, color: '#5dade2', finColor: '#2e86c1' },
-  { name: 'medium', points: 20,  w: 45, h: 22, speed: 1.8, weight: 30, color: '#58d68d', finColor: '#28b463' },
-  { name: 'large',  points: 50,  w: 65, h: 30, speed: 1.2, weight: 15, color: '#e67e22', finColor: '#d35400' },
-  { name: 'golden', points: 100, w: 40, h: 20, speed: 3.5, weight: 5,  color: '#f1c40f', finColor: '#f39c12' },
+  { name: 'small',  points: 10,  w: 30, h: 15, speed: 2.5, weight: 50, color: '#5dade2', finColor: '#2e86c1', escapeChance: 0.1 },
+  { name: 'medium', points: 20,  w: 45, h: 22, speed: 1.8, weight: 30, color: '#58d68d', finColor: '#28b463', escapeChance: 0.2 },
+  { name: 'large',  points: 50,  w: 65, h: 30, speed: 1.2, weight: 15, color: '#e67e22', finColor: '#d35400', escapeChance: 0.35 },
+  { name: 'golden', points: 100, w: 40, h: 20, speed: 3.5, weight: 5,  color: '#f1c40f', finColor: '#f39c12', escapeChance: 0.5 },
 ];
 
 // --- Game State ---
@@ -406,6 +406,27 @@ function drawHookLine(p, time) {
   }
 }
 
+function tryHookFish(p, time) {
+  const tip = getHookTip(p);
+  for (const f of fishes) {
+    if (!f.alive || f.caught) continue;
+    const b = getFishBounds(f, time);
+    if (tip.x >= b.x && tip.x <= b.x + b.w && tip.y >= b.y && tip.y <= b.y + b.h) {
+      f.caught = true;
+      f.alive = false;
+      p.caughtFish = f;
+      p.hookState = HOOK_STATES.CATCH;
+      p.catchStartLength = p.hookLength;
+      p.escapeAt = Math.random() < f.type.escapeChance
+        ? p.hookLength * rand(0.3, 0.7)
+        : -1;
+      spawnBubbles(tip.x, tip.y, 6);
+      return true;
+    }
+  }
+  return false;
+}
+
 function updatePlayer(p, dt, time) {
   switch (p.hookState) {
     case HOOK_STATES.IDLE:
@@ -417,28 +438,27 @@ function updatePlayer(p, dt, time) {
 
     case HOOK_STATES.DROP:
       p.hookLength += HOOK_DROP_SPEED * 60 * dt;
-      // Check collision with fish
-      const tip = getHookTip(p);
-      for (const f of fishes) {
-        if (!f.alive || f.caught) continue;
-        const b = getFishBounds(f, time);
-        if (tip.x >= b.x && tip.x <= b.x + b.w && tip.y >= b.y && tip.y <= b.y + b.h) {
-          // Caught!
-          f.caught = true;
-          f.alive = false;
-          p.caughtFish = f;
-          p.hookState = HOOK_STATES.CATCH;
-          // Splash bubbles
-          spawnBubbles(tip.x, tip.y, 6);
-          break;
-        }
-      }
+      tryHookFish(p, time);
+      if (p.hookState === HOOK_STATES.CATCH) break;
       if (p.hookLength >= p.maxHookLength) {
         p.hookState = HOOK_STATES.RETRACT;
       }
       break;
 
     case HOOK_STATES.CATCH:
+      // Check if fish escapes
+      if (p.escapeAt > 0 && p.hookLength <= p.escapeAt) {
+        const tip = getHookTip(p);
+        const f = p.caughtFish;
+        f.alive = true;
+        f.caught = false;
+        f.x = tip.x;
+        f.y = tip.y;
+        spawnBubbles(tip.x, tip.y, 8);
+        p.caughtFish = null;
+        p.hookState = HOOK_STATES.RETRACT;
+        break;
+      }
       p.hookLength -= HOOK_CATCH_RETRACT_SPEED * 60 * dt;
       if (p.hookLength <= 0) {
         p.hookLength = 0;
@@ -455,6 +475,8 @@ function updatePlayer(p, dt, time) {
       break;
 
     case HOOK_STATES.RETRACT:
+      tryHookFish(p, time);
+      if (p.hookState === HOOK_STATES.CATCH) break;
       p.hookLength -= HOOK_RETRACT_SPEED * 60 * dt;
       if (p.hookLength <= 0) {
         p.hookLength = 0;
