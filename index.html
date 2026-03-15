@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta http-equiv="Cache-Control" content="max-age=60, must-revalidate">
 <title>Fishing Game</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -45,6 +46,9 @@ function resize() {
 }
 resize();
 window.addEventListener('resize', resize);
+
+// --- Version ---
+const VERSION = 'v1.0.0';
 
 // --- Constants ---
 const HOOK_STATES = { IDLE: 0, DROP: 1, CATCH: 2, RETRACT: 3 };
@@ -554,6 +558,17 @@ function drawHUD() {
     ctx.fillText(p.name + ': ' + p.score, sx, sy);
   }
   ctx.textBaseline = 'alphabetic';
+
+  drawVersion();
+}
+
+function drawVersion() {
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'top';
+  ctx.fillText(VERSION, W - 8, 8);
+  ctx.textBaseline = 'alphabetic';
 }
 
 // --- Menu Screen ---
@@ -808,6 +823,7 @@ function frame(ts) {
     drawBackground(globalTime);
     for (const f of menuFishes) drawFish(f, globalTime);
     drawMenuButtons();
+    drawVersion();
   } else if (screen === 'play') {
     updatePlay(dt, globalTime);
     drawPlay(globalTime);
