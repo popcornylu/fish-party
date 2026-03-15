@@ -32,6 +32,7 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 let W, H, dpr;
 let WATER_Y; // y-coordinate of water surface
+let layoutReady = false;
 
 function resize() {
   dpr = window.devicePixelRatio || 1;
@@ -43,6 +44,24 @@ function resize() {
   canvas.style.height = H + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   WATER_Y = H * 0.28;
+
+  // Relayout players and fish (guard: skip on initial call before vars are defined)
+  if (layoutReady) {
+    for (const p of players) {
+      const spacing = W / (players.length + 1);
+      p.boatX = spacing * (p.index + 1);
+      p.boatY = WATER_Y - 5;
+      p.maxHookLength = (H - WATER_Y) * MAX_HOOK_LENGTH_RATIO;
+      if (p.hookLength > p.maxHookLength) p.hookLength = p.maxHookLength;
+    }
+    const relayoutFish = (list, minYOffset) => {
+      for (const f of list) {
+        f.y = clamp(f.y, WATER_Y + minYOffset, H - 30);
+      }
+    };
+    relayoutFish(fishes, 25);
+    relayoutFish(menuFishes, 30);
+  }
 }
 resize();
 window.addEventListener('resize', resize);
@@ -81,6 +100,7 @@ let timer = GAME_DURATION;
 let lastTime = 0;
 let menuFishes = [];
 let clouds = [];
+layoutReady = true;
 
 // --- Utility ---
 function rand(a, b) { return a + Math.random() * (b - a); }
