@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Fishing Game</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  background: #000;
+}
+canvas {
+  display: block;
+  touch-action: none;
+}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+(() => {
+'use strict';
+
+// --- Canvas Setup ---
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W, H, dpr;
+let WATER_Y; // y-coordinate of water surface
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  WATER_Y = H * 0.28;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Constants ---
+const HOOK_STATES = { IDLE: 0, DROP: 1, CATCH: 2, RETRACT: 3 };
+const GAME_DURATION = 60;
+const HOOK_DROP_SPEED = 4.5;
+const HOOK_RETRACT_SPEED = 6;
+const HOOK_CATCH_RETRACT_SPEED = 5;
+const MAX_HOOK_LENGTH_RATIO = 0.85; // fraction of underwater depth
+const SWING_SPEED = 1.8; // radians per second
+const SWING_RANGE = Math.PI / 3; // 60 degrees
+
+const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12'];
+const PLAYER_NAMES = ['P1', 'P2', 'P3', 'P4'];
+
+const FISH_TYPES = [
+  { name: 'small',  points: 10,  w: 30, h: 15, speed: 2.5, weight: 50, color: '#5dade2', finColor: '#2e86c1' },
+  { name: 'medium', points: 20,  w: 45, h: 22, speed: 1.8, weight: 30, color: '#58d68d', finColor: '#28b463' },
+  { name: 'large',  points: 50,  w: 65, h: 30, speed: 1.2, weight: 15, color: '#e67e22', finColor: '#d35400' },
+  { name: 'golden', points: 100, w: 40, h: 20, speed: 3.5, weight: 5,  color: '#f1c40f', finColor: '#f39c12' },
+];
+
+// --- Game State ---
+let screen = 'menu'; // 'menu', 'play', 'gameover'
+let playerCount = 0;
+let players = [];
+let fishes = [];
+let bubbles = [];
+let scoreTexts = [];
+let timer = GAME_DURATION;
+let lastTime = 0;
+let menuFishes = [];
+let clouds = [];
+
+// --- Utility ---
+function rand(a, b) { return a + Math.random() * (b - a); }
+function randInt(a, b) { return Math.floor(rand(a, b + 1)); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// --- Cloud ---
+function createCloud() {
+  return {
+    x: rand(-100, W + 100),
+    y: rand(10, WATER_Y * 0.5),
+    w: rand(80, 180),
+    h: rand(30, 50),
+    speed: rand(0.15, 0.4),
+  };
+}
+
+function initClouds() {
+  clouds = [];
+  for (let i = 0; i < 6; i++) clouds.push(createCloud());
+}
+
+function drawCloud(c) {
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.beginPath();
+  ctx.ellipse(c.x, c.y, c.w * 0.5, c.h * 0.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(c.x - c.w * 0.25, c.y + 5, c.w * 0.35, c.h * 0.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(c.x + c.w * 0.25, c.y + 3, c.w * 0.3, c.h * 0.35, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function updateClouds(dt) {
+  for (const c of clouds) {
+    c.x += c.speed * 60 * dt;
+    if (c.x - c.w > W + 50) { c.x = -c.w - 50; c.y = rand(10, WATER_Y * 0.5); }
+  }
+}
+
+// --- Background ---
+function drawSky() {
+  const grad = ctx.createLinearGradient(0, 0, 0, WATER_Y);
+  grad.addColorStop(0, '#87CEEB');
+  grad.addColorStop(1, '#b8e4f9');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, WATER_Y);
+}
+
+function drawWater(time) {
+  // Water gradient
+  const grad = ctx.createLinearGradient(0, WATER_Y, 0, H);
+  grad.addColorStop(0, '#1a7bb5');
+  grad.addColorStop(0.5, '#145f8a');
+  grad.addColorStop(1, '#0d3b5e');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, WATER_Y, W, H - WATER_Y);
+
+  // Animated wave surface
+  ctx.beginPath();
+  ctx.moveTo(0, WATER_Y);
+  for (let x = 0; x <= W; x += 4) {
+    const y = WATER_Y + Math.sin(x * 0.02 + time * 2) * 4 + Math.sin(x * 0.01 + time * 1.5) * 3;
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(W, WATER_Y - 10);
+  ctx.lineTo(0, WATER_Y - 10);
+  ctx.closePath();
+  ctx.fillStyle = '#1a7bb5';
+  ctx.fill();
+
+  // Wave highlight
+  ctx.beginPath();
+  for (let x = 0; x <= W; x += 4) {
+    const y = WATER_Y + Math.sin(x * 0.02 + time * 2) * 4 + Math.sin(x * 0.01 + time * 1.5) * 3;
+    if (x === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+function drawBackground(time) {
+  drawSky();
+  for (const c of clouds) drawCloud(c);
+  drawWater(time);
+}
+
+// --- Fish ---
+function pickFishType() {
+  const r = Math.random() * 100;
+  let sum = 0;
+  for (const ft of FISH_TYPES) {
+    sum += ft.weight;
+    if (r <= sum) return ft;
+  }
+  return FISH_TYPES[0];
+}
+
+function createFish(forMenu) {
+  const type = pickFishType();
+  const fromLeft = Math.random() < 0.5;
+  const minY = forMenu ? WATER_Y + 30 : WATER_Y + 25;
+  const maxY = forMenu ? H - 30 : H - 30;
+  return {
+    type,
+    x: fromLeft ? -type.w : W + type.w,
+    y: rand(minY, maxY),
+    dir: fromLeft ? 1 : -1,
+    speed: type.speed * rand(0.8, 1.2),
+    bobPhase: rand(0, Math.PI * 2),
+    bobAmp: rand(2, 6),
+    alive: true,
+    caught: false,
+  };
+}
+
+function drawFish(f, time) {
+  const { type, x, dir } = f;
+  const bobY = f.y + Math.sin(time * 2 + f.bobPhase) * f.bobAmp;
+  const hw = type.w / 2;
+  const hh = type.h / 2;
+
+  ctx.save();
+  ctx.translate(x, bobY);
+  ctx.scale(dir, 1);
+
+  // Golden fish glow
+  if (type.name === 'golden') {
+    ctx.shadowColor = '#f1c40f';
+    ctx.shadowBlur = 12;
+  }
+
+  // Body
+  ctx.fillStyle = type.color;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, hw, hh, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Body gradient overlay
+  const bodyGrad = ctx.createLinearGradient(0, -hh, 0, hh);
+  bodyGrad.addColorStop(0, 'rgba(255,255,255,0.3)');
+  bodyGrad.addColorStop(1, 'rgba(0,0,0,0.15)');
+  ctx.fillStyle = bodyGrad;
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+
+  // Tail
+  ctx.fillStyle = type.finColor;
+  ctx.beginPath();
+  ctx.moveTo(-hw + 2, 0);
+  ctx.lineTo(-hw - hh * 0.8, -hh * 0.7);
+  ctx.lineTo(-hw - hh * 0.8, hh * 0.7);
+  ctx.closePath();
+  ctx.fill();
+
+  // Dorsal fin
+  ctx.fillStyle = type.finColor;
+  ctx.beginPath();
+  ctx.moveTo(hw * 0.1, -hh);
+  ctx.lineTo(-hw * 0.2, -hh - hh * 0.4);
+  ctx.lineTo(-hw * 0.4, -hh + 2);
+  ctx.closePath();
+  ctx.fill();
+
+  // Eye
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(hw * 0.45, -hh * 0.2, hh * 0.25, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#111';
+  ctx.beginPath();
+  ctx.arc(hw * 0.5, -hh * 0.2, hh * 0.13, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function updateFish(f, dt) {
+  if (f.caught) return;
+  f.x += f.dir * f.speed * 60 * dt;
+}
+
+function isFishOffscreen(f) {
+  return (f.dir === 1 && f.x > W + f.type.w + 20) ||
+         (f.dir === -1 && f.x < -f.type.w - 20);
+}
+
+function getFishBounds(f, time) {
+  const bobY = f.y + Math.sin(time * 2 + f.bobPhase) * f.bobAmp;
+  return {
+    x: f.x - f.type.w / 2,
+    y: bobY - f.type.h / 2,
+    w: f.type.w,
+    h: f.type.h,
+  };
+}
+
+// --- Boat & Hook ---
+function createPlayer(index, total) {
+  const spacing = W / (total + 1);
+  const bx = spacing * (index + 1);
+  return {
+    index,
+    boatX: bx,
+    boatY: WATER_Y - 5,
+    score: 0,
+    hookState: HOOK_STATES.IDLE,
+    hookAngle: 0,
+    swingDir: 1,
+    hookLength: 0,
+    maxHookLength: (H - WATER_Y) * MAX_HOOK_LENGTH_RATIO,
+    hookDropAngle: 0,
+    caughtFish: null,
+    color: PLAYER_COLORS[index],
+    name: PLAYER_NAMES[index],
+    glowPhase: rand(0, Math.PI * 2),
+  };
+}
+
+function drawBoat(p, time) {
+  const { boatX, boatY, color } = p;
+
+  // Glow ring when IDLE
+  if (p.hookState === HOOK_STATES.IDLE) {
+    const glow = 0.3 + 0.3 * Math.sin(time * 3 + p.glowPhase);
+    ctx.strokeStyle = `rgba(255,255,255,${glow})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(boatX, boatY - 10, 35, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Boat hull
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(boatX - 30, boatY - 5);
+  ctx.lineTo(boatX - 22, boatY + 12);
+  ctx.lineTo(boatX + 22, boatY + 12);
+  ctx.lineTo(boatX + 30, boatY - 5);
+  ctx.closePath();
+  ctx.fill();
+
+  // Hull detail stripe
+  ctx.fillStyle = 'rgba(0,0,0,0.15)';
+  ctx.fillRect(boatX - 24, boatY + 2, 48, 5);
+
+  // Mast
+  ctx.strokeStyle = '#5d4e37';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(boatX, boatY - 5);
+  ctx.lineTo(boatX, boatY - 30);
+  ctx.stroke();
+
+  // Player label
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(p.name, boatX, boatY - 33);
+}
+
+function getHookTip(p) {
+  const angle = (p.hookState === HOOK_STATES.IDLE) ? p.hookAngle : p.hookDropAngle;
+  const startX = p.boatX;
+  const startY = p.boatY + 5;
+  const tipX = startX + Math.sin(angle) * p.hookLength;
+  const tipY = startY + Math.cos(angle) * p.hookLength;
+  return { x: tipX, y: tipY, startX, startY, angle };
+}
+
+function drawHookLine(p, time) {
+  if (p.hookState === HOOK_STATES.IDLE) {
+    // Dashed indicator line
+    const angle = p.hookAngle;
+    const len = 50;
+    const sx = p.boatX;
+    const sy = p.boatY + 5;
+    const ex = sx + Math.sin(angle) * len;
+    const ey = sy + Math.cos(angle) * len;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    return;
+  }
+
+  const tip = getHookTip(p);
+
+  // Fishing line
+  ctx.strokeStyle = '#ddd';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(tip.startX, tip.startY);
+  ctx.lineTo(tip.x, tip.y);
+  ctx.stroke();
+
+  // Hook
+  ctx.strokeStyle = '#aaa';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(tip.x, tip.y + 5, 5, -Math.PI * 0.3, Math.PI * 1.2);
+  ctx.stroke();
+
+  // Draw caught fish at hook tip
+  if (p.hookState === HOOK_STATES.CATCH && p.caughtFish) {
+    const cf = p.caughtFish;
+    const saved = { x: cf.x, y: cf.y };
+    cf.x = tip.x;
+    cf.y = tip.y + 10;
+    drawFish(cf, time);
+    cf.x = saved.x;
+    cf.y = saved.y;
+  }
+}
+
+function updatePlayer(p, dt, time) {
+  switch (p.hookState) {
+    case HOOK_STATES.IDLE:
+      p.hookAngle += p.swingDir * SWING_SPEED * dt;
+      if (p.hookAngle > SWING_RANGE) { p.hookAngle = SWING_RANGE; p.swingDir = -1; }
+      if (p.hookAngle < -SWING_RANGE) { p.hookAngle = -SWING_RANGE; p.swingDir = 1; }
+      p.hookLength = 0;
+      break;
+
+    case HOOK_STATES.DROP:
+      p.hookLength += HOOK_DROP_SPEED * 60 * dt;
+      // Check collision with fish
+      const tip = getHookTip(p);
+      for (const f of fishes) {
+        if (!f.alive || f.caught) continue;
+        const b = getFishBounds(f, time);
+        if (tip.x >= b.x && tip.x <= b.x + b.w && tip.y >= b.y && tip.y <= b.y + b.h) {
+          // Caught!
+          f.caught = true;
+          f.alive = false;
+          p.caughtFish = f;
+          p.hookState = HOOK_STATES.CATCH;
+          // Splash bubbles
+          spawnBubbles(tip.x, tip.y, 6);
+          break;
+        }
+      }
+      if (p.hookLength >= p.maxHookLength) {
+        p.hookState = HOOK_STATES.RETRACT;
+      }
+      break;
+
+    case HOOK_STATES.CATCH:
+      p.hookLength -= HOOK_CATCH_RETRACT_SPEED * 60 * dt;
+      if (p.hookLength <= 0) {
+        p.hookLength = 0;
+        p.hookState = HOOK_STATES.IDLE;
+        // Award score
+        if (p.caughtFish) {
+          const pts = p.caughtFish.type.points;
+          p.score += pts;
+          spawnScoreText(p.boatX, p.boatY - 40, pts, p.color);
+          spawnBubbles(p.boatX, p.boatY + 10, 4);
+          p.caughtFish = null;
+        }
+      }
+      break;
+
+    case HOOK_STATES.RETRACT:
+      p.hookLength -= HOOK_RETRACT_SPEED * 60 * dt;
+      if (p.hookLength <= 0) {
+        p.hookLength = 0;
+        p.hookState = HOOK_STATES.IDLE;
+      }
+      break;
+  }
+}
+
+// --- Bubbles ---
+function spawnBubbles(x, y, count) {
+  for (let i = 0; i < count; i++) {
+    bubbles.push({
+      x: x + rand(-15, 15),
+      y: y + rand(-5, 5),
+      r: rand(2, 5),
+      vy: -rand(0.8, 2),
+      vx: rand(-0.5, 0.5),
+      life: 1,
+      decay: rand(0.5, 1.2),
+    });
+  }
+}
+
+function updateBubbles(dt) {
+  for (let i = bubbles.length - 1; i >= 0; i--) {
+    const b = bubbles[i];
+    b.x += b.vx * 60 * dt;
+    b.y += b.vy * 60 * dt;
+    b.life -= b.decay * dt;
+    if (b.life <= 0) bubbles.splice(i, 1);
+  }
+}
+
+function drawBubbles() {
+  for (const b of bubbles) {
+    ctx.globalAlpha = b.life * 0.6;
+    ctx.fillStyle = 'rgba(200,230,255,0.7)';
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// --- Score Texts ---
+function spawnScoreText(x, y, pts, color) {
+  scoreTexts.push({ x, y, text: '+' + pts, color, life: 1, vy: -1.5 });
+}
+
+function updateScoreTexts(dt) {
+  for (let i = scoreTexts.length - 1; i >= 0; i--) {
+    const s = scoreTexts[i];
+    s.y += s.vy * 60 * dt;
+    s.life -= 0.7 * dt;
+    if (s.life <= 0) scoreTexts.splice(i, 1);
+  }
+}
+
+function drawScoreTexts() {
+  for (const s of scoreTexts) {
+    ctx.globalAlpha = s.life;
+    ctx.fillStyle = s.color;
+    ctx.font = 'bold 22px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(s.text, s.x, s.y);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// --- HUD ---
+function drawHUD() {
+  // Timer
+  const sec = Math.max(0, Math.ceil(timer));
+  const timerColor = timer <= 10 ? '#e74c3c' : '#fff';
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.beginPath();
+  ctx.roundRect(W / 2 - 40, 8, 80, 34, 8);
+  ctx.fill();
+  ctx.fillStyle = timerColor;
+  ctx.font = 'bold 22px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(sec + 's', W / 2, 26);
+
+  // Player scores
+  for (const p of players) {
+    const sx = p.boatX;
+    const sy = 50;
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.roundRect(sx - 32, sy - 12, 64, 24, 6);
+    ctx.fill();
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(p.name + ': ' + p.score, sx, sy);
+  }
+  ctx.textBaseline = 'alphabetic';
+}
+
+// --- Menu Screen ---
+function initMenu() {
+  screen = 'menu';
+  menuFishes = [];
+  for (let i = 0; i < 10; i++) menuFishes.push(createFish(true));
+  initClouds();
+}
+
+function drawMenuButtons() {
+  const btnW = 180;
+  const btnH = 50;
+  const gap = 15;
+  const totalH = 4 * btnH + 3 * gap;
+  const startY = H * 0.42;
+
+  // Title
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 42px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.shadowColor = 'rgba(0,0,0,0.4)';
+  ctx.shadowBlur = 8;
+  ctx.fillText('🎣 Fishing Game', W / 2, startY - 40);
+  ctx.shadowBlur = 0;
+
+  for (let i = 0; i < 4; i++) {
+    const bx = W / 2 - btnW / 2;
+    const by = startY + i * (btnH + gap);
+    // Button bg
+    ctx.fillStyle = PLAYER_COLORS[i];
+    ctx.beginPath();
+    ctx.roundRect(bx, by, btnW, btnH, 12);
+    ctx.fill();
+    // Button highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.beginPath();
+    ctx.roundRect(bx, by, btnW, btnH / 2, [12, 12, 0, 0]);
+    ctx.fill();
+    // Button text
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText((i + 1) + ' Player' + (i > 0 ? 's' : ''), W / 2, by + btnH / 2);
+  }
+  ctx.textBaseline = 'alphabetic';
+}
+
+function getMenuButtonIndex(x, y) {
+  const btnW = 180;
+  const btnH = 50;
+  const gap = 15;
+  const startY = H * 0.42;
+  for (let i = 0; i < 4; i++) {
+    const bx = W / 2 - btnW / 2;
+    const by = startY + i * (btnH + gap);
+    if (x >= bx && x <= bx + btnW && y >= by && y <= by + btnH) return i;
+  }
+  return -1;
+}
+
+// --- Play Screen ---
+function startGame(count) {
+  playerCount = count;
+  players = [];
+  for (let i = 0; i < count; i++) players.push(createPlayer(i, count));
+  fishes = [];
+  bubbles = [];
+  scoreTexts = [];
+  timer = GAME_DURATION;
+  const targetFish = 8 + count * 2;
+  for (let i = 0; i < targetFish; i++) fishes.push(createFish(false));
+  screen = 'play';
+}
+
+function updatePlay(dt, time) {
+  timer -= dt;
+  if (timer <= 0) {
+    timer = 0;
+    screen = 'gameover';
+    return;
+  }
+
+  updateClouds(dt);
+
+  // Update players
+  for (const p of players) updatePlayer(p, dt, time);
+
+  // Update fish
+  const targetFish = 8 + playerCount * 2;
+  for (let i = fishes.length - 1; i >= 0; i--) {
+    const f = fishes[i];
+    if (f.caught) { fishes.splice(i, 1); continue; }
+    updateFish(f, dt);
+    if (isFishOffscreen(f)) { fishes.splice(i, 1); }
+  }
+  // Respawn
+  while (fishes.length < targetFish) fishes.push(createFish(false));
+
+  updateBubbles(dt);
+  updateScoreTexts(dt);
+}
+
+function drawPlay(time) {
+  drawBackground(time);
+
+  // Draw fish
+  for (const f of fishes) {
+    if (f.alive && !f.caught) drawFish(f, time);
+  }
+
+  // Draw hook lines (behind boats)
+  for (const p of players) drawHookLine(p, time);
+
+  // Draw boats
+  for (const p of players) drawBoat(p, time);
+
+  drawBubbles();
+  drawScoreTexts();
+  drawHUD();
+}
+
+// --- Game Over ---
+function drawGameOver(time) {
+  // Draw the frozen game scene
+  drawPlay(time);
+
+  // Dark overlay
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  ctx.fillRect(0, 0, W, H);
+
+  const cx = W / 2;
+  let cy = H * 0.22;
+
+  // Title
+  ctx.fillStyle = '#f1c40f';
+  ctx.font = 'bold 44px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText("Time's Up!", cx, cy);
+  cy += 50;
+
+  // Sort players by score descending
+  const sorted = [...players].sort((a, b) => b.score - a.score);
+
+  // Scoreboard
+  const rowH = 50;
+  const boardW = 260;
+  const boardX = cx - boardW / 2;
+  let boardY = cy;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.beginPath();
+  ctx.roundRect(boardX - 10, boardY - 10, boardW + 20, sorted.length * rowH + 20, 12);
+  ctx.fill();
+
+  for (let i = 0; i < sorted.length; i++) {
+    const p = sorted[i];
+    const ry = boardY + i * rowH;
+
+    // Rank
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'left';
+    const prefix = (i === 0) ? '👑 ' : (i + 1) + '. ';
+    ctx.fillText(prefix, boardX + 5, ry + 30);
+
+    // Player name & color dot
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(boardX + 55, ry + 25, 8, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#fff';
+    ctx.font = '18px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(p.name, boardX + 70, ry + 30);
+
+    // Score
+    ctx.fillStyle = '#f1c40f';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(p.score + ' pts', boardX + boardW, ry + 30);
+  }
+
+  // Prompt
+  const promptY = boardY + sorted.length * rowH + 55;
+  const alpha = 0.5 + 0.5 * Math.sin(time * 3);
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#fff';
+  ctx.font = '18px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Tap anywhere to play again', cx, promptY);
+  ctx.globalAlpha = 1;
+}
+
+// --- Input ---
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  if (screen === 'menu') {
+    const idx = getMenuButtonIndex(x, y);
+    if (idx >= 0) startGame(idx + 1);
+  } else if (screen === 'play') {
+    // Find closest boat within 70px
+    let closest = null;
+    let closestDist = 70;
+    for (const p of players) {
+      const dx = x - p.boatX;
+      const dy = y - p.boatY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < closestDist) {
+        closest = p;
+        closestDist = dist;
+      }
+    }
+    if (closest && closest.hookState === HOOK_STATES.IDLE) {
+      closest.hookDropAngle = closest.hookAngle;
+      closest.hookState = HOOK_STATES.DROP;
+      closest.hookLength = 0;
+      spawnBubbles(closest.boatX, closest.boatY + 15, 3);
+    }
+  } else if (screen === 'gameover') {
+    initMenu();
+  }
+});
+
+// --- Main Loop ---
+let globalTime = 0;
+
+function frame(ts) {
+  const tsSeconds = ts / 1000;
+  const dt = Math.min(lastTime ? tsSeconds - lastTime : 1 / 60, 1 / 30);
+  lastTime = tsSeconds;
+  globalTime += dt;
+
+  ctx.clearRect(0, 0, W, H);
+
+  if (screen === 'menu') {
+    updateClouds(dt);
+    // Update menu fish
+    for (let i = menuFishes.length - 1; i >= 0; i--) {
+      updateFish(menuFishes[i], dt);
+      if (isFishOffscreen(menuFishes[i])) {
+        menuFishes.splice(i, 1);
+        menuFishes.push(createFish(true));
+      }
+    }
+    drawBackground(globalTime);
+    for (const f of menuFishes) drawFish(f, globalTime);
+    drawMenuButtons();
+  } else if (screen === 'play') {
+    updatePlay(dt, globalTime);
+    drawPlay(globalTime);
+  } else if (screen === 'gameover') {
+    drawGameOver(globalTime);
+  }
+
+  requestAnimationFrame(frame);
+}
+
+// Polyfill roundRect if needed
+if (!ctx.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    if (!Array.isArray(r)) r = [r, r, r, r];
+    while (r.length < 4) r.push(r[r.length - 1] || 0);
+    this.moveTo(x + r[0], y);
+    this.lineTo(x + w - r[1], y);
+    this.arcTo(x + w, y, x + w, y + r[1], r[1]);
+    this.lineTo(x + w, y + h - r[2]);
+    this.arcTo(x + w, y + h, x + w - r[2], y + h, r[2]);
+    this.lineTo(x + r[3], y + h);
+    this.arcTo(x, y + h, x, y + h - r[3], r[3]);
+    this.lineTo(x, y + r[0]);
+    this.arcTo(x, y, x + r[0], y, r[0]);
+    this.closePath();
+  };
+}
+
+initMenu();
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>
