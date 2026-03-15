@@ -100,6 +100,7 @@ let timer = GAME_DURATION;
 let lastTime = 0;
 let menuFishes = [];
 let clouds = [];
+let menuSlots = ['human', 'off', 'off', 'off']; // each slot: 'off' | 'human' | 'ai'
 layoutReady = true;
 
 // --- Utility ---
@@ -107,6 +108,11 @@ function rand(a, b) { return a + Math.random() * (b - a); }
 function randInt(a, b) { return Math.floor(rand(a, b + 1)); }
 function lerp(a, b, t) { return a + (b - a) * t; }
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function cycleSlot(i) {
+  const order = ['off', 'human', 'ai'];
+  menuSlots[i] = order[(order.indexOf(menuSlots[i]) + 1) % 3];
+}
 
 // --- Cloud ---
 function createCloud() {
@@ -323,6 +329,8 @@ function createPlayer(index, total) {
     color: PLAYER_COLORS[index],
     name: PLAYER_NAMES[index],
     glowPhase: rand(0, Math.PI * 2),
+    isAI: false,
+    aiWaitTimer: 0,
   };
 }
 
@@ -454,6 +462,15 @@ function updatePlayer(p, dt, time) {
       if (p.hookAngle > SWING_RANGE) { p.hookAngle = SWING_RANGE; p.swingDir = -1; }
       if (p.hookAngle < -SWING_RANGE) { p.hookAngle = -SWING_RANGE; p.swingDir = 1; }
       p.hookLength = 0;
+      if (p.isAI) {
+        p.aiWaitTimer -= dt;
+        if (p.aiWaitTimer <= 0) {
+          p.hookDropAngle = p.hookAngle;
+          p.hookState = HOOK_STATES.DROP;
+          p.hookLength = 0;
+          spawnBubbles(p.boatX, p.boatY + 15, 3);
+        }
+      }
       break;
 
     case HOOK_STATES.DROP:
@@ -483,6 +500,7 @@ function updatePlayer(p, dt, time) {
       if (p.hookLength <= 0) {
         p.hookLength = 0;
         p.hookState = HOOK_STATES.IDLE;
+        if (p.isAI) p.aiWaitTimer = rand(1.5, 4.0);
         // Award score
         if (p.caughtFish) {
           const pts = p.caughtFish.type.points;
@@ -501,6 +519,7 @@ function updatePlayer(p, dt, time) {
       if (p.hookLength <= 0) {
         p.hookLength = 0;
         p.hookState = HOOK_STATES.IDLE;
+        if (p.isAI) p.aiWaitTimer = rand(1.5, 4.0);
       }
       break;
   }
@@ -632,7 +651,9 @@ function getMenuLayout() {
   const gapY = useGrid ? Math.min(8, btnH * 0.2) : 15;
   const titleY = useGrid ? WATER_Y + titleSize + 5 : H * 0.42 - 40;
   const startY = titleY + titleGap;
-  return { useGrid, btnW, btnH, gapX, gapY, startY, titleY, titleSize };
+  const lastRowY = useGrid ? startY + (btnH + gapY) : startY + 3 * (btnH + gapY);
+  const startBtnY = lastRowY + btnH + gapY * 2;
+  return { useGrid, btnW, btnH, gapX, gapY, startY, titleY, titleSize, startBtnY };
 }
 
 function getMenuButtonRect(i, layout) {
@@ -646,6 +667,11 @@ function getMenuButtonRect(i, layout) {
     return { x: bx, y: by, w: btnW, h: btnH };
   }
   return { x: W / 2 - btnW / 2, y: startY + i * (btnH + gapY), w: btnW, h: btnH };
+}
+
+function getStartButtonRect(layout) {
+  const w = layout.useGrid ? (2 * layout.btnW + layout.gapX) : layout.btnW;
+  return { x: W / 2 - w / 2, y: layout.startBtnY, w, h: layout.btnH };
 }
 
 function drawMenuButtons() {
@@ -664,8 +690,11 @@ function drawMenuButtons() {
   const fontSize = Math.min(20, layout.btnH * 0.45);
   for (let i = 0; i < 4; i++) {
     const r = getMenuButtonRect(i, layout);
-    // Button bg
-    ctx.fillStyle = PLAYER_COLORS[i];
+    const state = menuSlots[i];
+    const isActive = state !== 'off';
+
+    // Button bg — player color when active, gray when off
+    ctx.fillStyle = isActive ? PLAYER_COLORS[i] : '#666';
     ctx.beginPath();
     ctx.roundRect(r.x, r.y, r.w, r.h, 12);
     ctx.fill();
@@ -674,36 +703,59 @@ function drawMenuButtons() {
     ctx.beginPath();
     ctx.roundRect(r.x, r.y, r.w, r.h / 2, [12, 12, 0, 0]);
     ctx.fill();
-    // Button text
+    // Button text with emoji
+    const emoji = state === 'human' ? ' 🧑' : state === 'ai' ? ' 🤖' : ' —';
     ctx.fillStyle = '#fff';
     ctx.font = 'bold ' + fontSize + 'px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText((i + 1) + ' 人模式', r.x + r.w / 2, r.y + r.h / 2);
+    ctx.fillText('P' + (i + 1) + emoji, r.x + r.w / 2, r.y + r.h / 2);
   }
+
+  // Start button
+  const hasActive = menuSlots.some(s => s !== 'off');
+  const sr = getStartButtonRect(layout);
+  ctx.fillStyle = hasActive ? '#27ae60' : '#555';
+  ctx.beginPath();
+  ctx.roundRect(sr.x, sr.y, sr.w, sr.h, 12);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.2)';
+  ctx.beginPath();
+  ctx.roundRect(sr.x, sr.y, sr.w, sr.h / 2, [12, 12, 0, 0]);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold ' + fontSize + 'px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('開始遊戲!', sr.x + sr.w / 2, sr.y + sr.h / 2);
+
   ctx.textBaseline = 'alphabetic';
 }
 
-function getMenuButtonIndex(x, y) {
-  const layout = getMenuLayout();
-  for (let i = 0; i < 4; i++) {
-    const r = getMenuButtonRect(i, layout);
-    if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return i;
-  }
-  return -1;
-}
-
 // --- Play Screen ---
-function startGame(count) {
-  playerCount = count;
+function startGameFromSlots() {
+  const activeSlots = [];
+  for (let i = 0; i < 4; i++) {
+    if (menuSlots[i] !== 'off') activeSlots.push({ index: i, state: menuSlots[i] });
+  }
+  if (activeSlots.length === 0) return;
+
+  playerCount = activeSlots.length;
   players = [];
-  for (let i = 0; i < count; i++) players.push(createPlayer(i, count));
+  for (let i = 0; i < activeSlots.length; i++) {
+    const slot = activeSlots[i];
+    const p = createPlayer(i, activeSlots.length);
+    p.isAI = (slot.state === 'ai');
+    p.color = PLAYER_COLORS[slot.index];
+    p.name = p.isAI ? '電腦' + (slot.index + 1) : PLAYER_NAMES[slot.index];
+    if (p.isAI) p.aiWaitTimer = rand(1.0, 3.0);
+    players.push(p);
+  }
   fishes = [];
   bubbles = [];
   scoreTexts = [];
   timer = GAME_DURATION;
-  const targetFish = 8 + count * 2;
-  for (let i = 0; i < targetFish; i++) fishes.push(createFish(false));
+  for (let i = 0; i < 8 + playerCount * 2; i++) fishes.push(createFish(false));
   screen = 'play';
 }
 
@@ -835,13 +887,26 @@ canvas.addEventListener('pointerdown', (e) => {
   const y = e.clientY - rect.top;
 
   if (screen === 'menu') {
-    const idx = getMenuButtonIndex(x, y);
-    if (idx >= 0) startGame(idx + 1);
+    // Check slot buttons
+    const layout = getMenuLayout();
+    for (let i = 0; i < 4; i++) {
+      const r = getMenuButtonRect(i, layout);
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+        cycleSlot(i);
+        return;
+      }
+    }
+    // Check start button
+    const sr = getStartButtonRect(layout);
+    if (x >= sr.x && x <= sr.x + sr.w && y >= sr.y && y <= sr.y + sr.h) {
+      startGameFromSlots();
+    }
   } else if (screen === 'play') {
-    // Find closest boat within 70px
+    // Find closest boat within 70px (human only)
     let closest = null;
     let closestDist = 70;
     for (const p of players) {
+      if (p.isAI) continue;
       const dx = x - p.boatX;
       const dy = y - p.boatY;
       const dist = Math.sqrt(dx * dx + dy * dy);
