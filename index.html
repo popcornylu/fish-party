@@ -367,15 +367,30 @@ function drawChargeEffect(p, time) {
   }
   ctx.globalAlpha = 1;
 
-  // Charge percentage text above boat
+  // Charge percentage text above card
+  const cCardW = Math.min(100, W / (players.length + 1) * 0.85);
+  const cCardH = cCardW * 1.6;
+  const cCardTop = WATER_Y + 8 - cCardH;
   const pct = Math.floor(p.chargeLevel * 100);
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 14px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(pct + '%', p.boatX, p.boatY - 50);
+  ctx.fillText(pct + '%', p.boatX, cCardTop - 25);
 }
 
-// --- Boat & Hook ---
+// --- Rank Computation ---
+function computeRanks() {
+  const sorted = [...players].sort((a, b) => b.score - a.score);
+  const rankMap = new Map();
+  let currentRank = 1;
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && sorted[i].score < sorted[i - 1].score) currentRank = i + 1;
+    rankMap.set(sorted[i].index, currentRank);
+  }
+  return rankMap;
+}
+
+// --- Player Card & Hook ---
 function createPlayer(index, total) {
   const spacing = W / (total + 1);
   const bx = spacing * (index + 1);
@@ -405,46 +420,159 @@ function createPlayer(index, total) {
   };
 }
 
-function drawBoat(p, time) {
-  const { boatX, boatY, color } = p;
+function drawPlayerCard(p, time, rank) {
+  const cardW = Math.min(100, W / (players.length + 1) * 0.85);
+  const cardH = cardW * 1.6;
+  const cornerR = 10;
+  const centerX = p.boatX;
+  const bobOffset = Math.sin(time * 1.5 + p.glowPhase) * 2;
+  const cardBottom = WATER_Y + 8 + bobOffset;
+  const cardTop = cardBottom - cardH;
+  const cardLeft = centerX - cardW / 2;
 
-  // Glow ring when IDLE
+  ctx.save();
+
+  // --- Hanging wire + clip ---
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(centerX, cardTop - 18);
+  ctx.lineTo(centerX, cardTop);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.beginPath();
+  ctx.arc(centerX, cardTop - 20, 3, 0, Math.PI * 2);
+  ctx.fill();
+  // Tab at top of card
+  ctx.fillStyle = p.color;
+  ctx.beginPath();
+  ctx.roundRect(centerX - 10, cardTop - 6, 20, 10, [4, 4, 0, 0]);
+  ctx.fill();
+
+  // --- Card shadow ---
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath();
+  ctx.roundRect(cardLeft + 2, cardTop + 2, cardW, cardH, cornerR);
+  ctx.fill();
+
+  // --- Card body gradient ---
+  const cardGrad = ctx.createLinearGradient(cardLeft, cardTop, cardLeft, cardBottom);
+  cardGrad.addColorStop(0, p.color);
+  cardGrad.addColorStop(1, lerpColor(p.color, '#000000', 0.3));
+  ctx.fillStyle = cardGrad;
+  ctx.beginPath();
+  ctx.roundRect(cardLeft, cardTop, cardW, cardH, cornerR);
+  ctx.fill();
+
+  // --- Glossy highlight (top 40%) ---
+  ctx.fillStyle = 'rgba(255,255,255,0.2)';
+  ctx.beginPath();
+  ctx.roundRect(cardLeft, cardTop, cardW, cardH * 0.4, [cornerR, cornerR, 0, 0]);
+  ctx.fill();
+
+  // --- Card border ---
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(cardLeft, cardTop, cardW, cardH, cornerR);
+  ctx.stroke();
+
+  // --- Crown for 1st place ---
+  if (rank === 1) {
+    const crownSize = Math.max(14, cardW * 0.2);
+    ctx.font = crownSize + 'px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('👑', centerX, cardTop + cardH * 0.08);
+  }
+
+  // --- Avatar circle ---
+  const avatarR = cardW * 0.22;
+  const avatarY = cardTop + cardH * 0.3;
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.beginPath();
+  ctx.arc(centerX, avatarY, avatarR + 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath();
+  ctx.arc(centerX, avatarY, avatarR, 0, Math.PI * 2);
+  ctx.fill();
+  const emojiSize = Math.max(12, avatarR * 1.2);
+  ctx.font = emojiSize + 'px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(p.isAI ? '🤖' : '🧑', centerX, avatarY);
+
+  // --- Rank badge (ribbon shape) ---
+  const badgeW = cardW * 0.7;
+  const badgeH = 18;
+  const badgeY = cardTop + cardH * 0.52;
+  const badgeLeft = centerX - badgeW / 2;
+  const rankColors = ['#f1c40f', '#bdc3c7', '#cd7f32', '#95a5a6'];
+  const rankBg = rankColors[rank - 1] || '#95a5a6';
+
+  // Left ribbon tail
+  ctx.fillStyle = rankBg;
+  ctx.beginPath();
+  ctx.moveTo(badgeLeft - 6, badgeY);
+  ctx.lineTo(badgeLeft, badgeY);
+  ctx.lineTo(badgeLeft, badgeY + badgeH);
+  ctx.lineTo(badgeLeft - 6, badgeY + badgeH);
+  ctx.lineTo(badgeLeft - 2, badgeY + badgeH / 2);
+  ctx.closePath();
+  ctx.fill();
+  // Center badge
+  ctx.beginPath();
+  ctx.roundRect(badgeLeft, badgeY, badgeW, badgeH, 3);
+  ctx.fill();
+  // Right ribbon tail
+  ctx.beginPath();
+  ctx.moveTo(badgeLeft + badgeW + 6, badgeY);
+  ctx.lineTo(badgeLeft + badgeW, badgeY);
+  ctx.lineTo(badgeLeft + badgeW, badgeY + badgeH);
+  ctx.lineTo(badgeLeft + badgeW + 6, badgeY + badgeH);
+  ctx.lineTo(badgeLeft + badgeW + 2, badgeY + badgeH / 2);
+  ctx.closePath();
+  ctx.fill();
+  // Ribbon highlight
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.beginPath();
+  ctx.roundRect(badgeLeft, badgeY, badgeW, badgeH / 2, [3, 3, 0, 0]);
+  ctx.fill();
+  // Rank text
+  ctx.fillStyle = rank === 1 ? '#5d4200' : '#fff';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('NO.' + rank, centerX, badgeY + badgeH / 2);
+
+  // --- Score (large, prominent) ---
+  const scoreSize = Math.max(18, cardW * 0.3);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold ' + scoreSize + 'px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(p.score, centerX, cardTop + cardH * 0.75);
+
+  // --- Player name ---
+  const nameSize = Math.max(9, cardW * 0.13);
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.font = nameSize + 'px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(p.name, centerX, cardTop + cardH * 0.9);
+
+  ctx.restore();
+
+  // --- IDLE glow around card ---
   if (p.hookState === HOOK_STATES.IDLE) {
-    const glow = 0.3 + 0.3 * Math.sin(time * 3 + p.glowPhase);
+    const glow = 0.2 + 0.2 * Math.sin(time * 3 + p.glowPhase);
     ctx.strokeStyle = `rgba(255,255,255,${glow})`;
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(boatX, boatY - 10, 35, 0, Math.PI * 2);
+    ctx.roundRect(cardLeft - 4, cardTop - 4, cardW + 8, cardH + 8, cornerR + 2);
     ctx.stroke();
   }
-
-  // Boat hull
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(boatX - 30, boatY - 5);
-  ctx.lineTo(boatX - 22, boatY + 12);
-  ctx.lineTo(boatX + 22, boatY + 12);
-  ctx.lineTo(boatX + 30, boatY - 5);
-  ctx.closePath();
-  ctx.fill();
-
-  // Hull detail stripe
-  ctx.fillStyle = 'rgba(0,0,0,0.15)';
-  ctx.fillRect(boatX - 24, boatY + 2, 48, 5);
-
-  // Mast
-  ctx.strokeStyle = '#5d4e37';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(boatX, boatY - 5);
-  ctx.lineTo(boatX, boatY - 30);
-  ctx.stroke();
-
-  // Player label
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 11px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(p.name, boatX, boatY - 33);
 }
 
 function getHookTip(p) {
@@ -602,7 +730,9 @@ function updatePlayer(p, dt, time) {
         if (p.caughtFish) {
           const pts = p.caughtFish.type.points;
           p.score += pts;
-          spawnScoreText(p.boatX, p.boatY - 40, pts, p.color);
+          const stCardW = Math.min(100, W / (players.length + 1) * 0.85);
+          const stCardH = stCardW * 1.6;
+          spawnScoreText(p.boatX, WATER_Y + 8 - stCardH - 15, pts, p.color);
           spawnBubbles(p.boatX, p.boatY + 10, 4);
           p.caughtFish = null;
         }
@@ -688,33 +818,39 @@ function drawScoreTexts() {
 
 // --- HUD ---
 function drawHUD() {
-  // Timer
+  // Timer at top center
+  const timerY = 10;
   const sec = Math.max(0, Math.ceil(timer));
   const timerColor = timer <= 10 ? '#e74c3c' : '#fff';
   ctx.fillStyle = 'rgba(0,0,0,0.4)';
   ctx.beginPath();
-  ctx.roundRect(W / 2 - 40, 8, 80, 34, 8);
+  ctx.roundRect(W / 2 - 45, timerY, 90, 30, 8);
   ctx.fill();
+
+  // Timer progress bar background
+  const barW = 70;
+  const barH = 4;
+  const barX = W / 2 - barW / 2;
+  const barY = timerY + 23;
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  ctx.beginPath();
+  ctx.roundRect(barX, barY, barW, barH, 2);
+  ctx.fill();
+
+  // Timer progress bar fill
+  const progress = Math.max(0, timer / GAME_DURATION);
+  const progColor = timer <= 10 ? '#e74c3c' : '#2ecc71';
+  ctx.fillStyle = progColor;
+  ctx.beginPath();
+  ctx.roundRect(barX, barY, barW * progress, barH, 2);
+  ctx.fill();
+
+  // Timer text
   ctx.fillStyle = timerColor;
-  ctx.font = 'bold 22px sans-serif';
+  ctx.font = 'bold 18px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(sec + '秒', W / 2, 26);
-
-  // Player scores
-  for (const p of players) {
-    const sx = p.boatX;
-    const sy = 50;
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.beginPath();
-    ctx.roundRect(sx - 42, sy - 12, 84, 24, 6);
-    ctx.fill();
-    ctx.fillStyle = p.color;
-    ctx.font = 'bold 13px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(p.name + ': ' + p.score, sx, sy);
-  }
+  ctx.fillText(sec + '秒', W / 2, timerY + 13);
   ctx.textBaseline = 'alphabetic';
 
   drawVersion();
@@ -949,12 +1085,13 @@ function drawPlay(time) {
     if (f.alive && !f.caught) drawFish(f, time);
   }
 
-  // Draw hook lines (behind boats)
+  // Draw hook lines (behind cards)
   for (const p of players) drawHookLine(p, time);
 
-  // Draw boats and charge effects
+  // Draw player cards and charge effects
+  const rankMap = computeRanks();
   for (const p of players) {
-    drawBoat(p, time);
+    drawPlayerCard(p, time, rankMap.get(p.index));
     drawChargeEffect(p, time);
   }
 
