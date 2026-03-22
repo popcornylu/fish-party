@@ -440,6 +440,9 @@ function drawPlayerCard(p, time, rank) {
 
   ctx.save();
 
+  // Card base color: green for human, blue for AI, red if rank 3-4
+  const cardBaseColor = rank >= 3 ? '#c0392b' : (p.isAI ? '#2980b9' : '#27ae60');
+
   // --- Hanging wire + clip ---
   ctx.strokeStyle = 'rgba(255,255,255,0.5)';
   ctx.lineWidth = 1.5;
@@ -452,7 +455,7 @@ function drawPlayerCard(p, time, rank) {
   ctx.arc(centerX, cardTop - 20, 3, 0, Math.PI * 2);
   ctx.fill();
   // Tab at top of card
-  ctx.fillStyle = p.color;
+  ctx.fillStyle = cardBaseColor;
   ctx.beginPath();
   ctx.roundRect(centerX - 10, cardTop - 6, 20, 10, [4, 4, 0, 0]);
   ctx.fill();
@@ -465,8 +468,8 @@ function drawPlayerCard(p, time, rank) {
 
   // --- Card body gradient ---
   const cardGrad = ctx.createLinearGradient(cardLeft, cardTop, cardLeft, cardBottom);
-  cardGrad.addColorStop(0, p.color);
-  cardGrad.addColorStop(1, lerpColor(p.color, '#000000', 0.3));
+  cardGrad.addColorStop(0, cardBaseColor);
+  cardGrad.addColorStop(1, lerpColor(cardBaseColor, '#000000', 0.3));
   ctx.fillStyle = cardGrad;
   ctx.beginPath();
   ctx.roundRect(cardLeft, cardTop, cardW, cardH, cornerR);
