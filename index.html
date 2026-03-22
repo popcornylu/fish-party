@@ -425,6 +425,7 @@ function createPlayer(index, total) {
     pointerId: -1,
     chargeStartY: 0,
     lastPointerY: -1,
+    eliminated: false,
   };
 }
 
@@ -440,8 +441,8 @@ function drawPlayerCard(p, time, rank) {
 
   ctx.save();
 
-  // Card base color: green for human, blue for AI, red if rank 3-4
-  const cardBaseColor = rank >= 3 ? '#c0392b' : (p.isAI ? '#2980b9' : '#27ae60');
+  // Card base color: gray if eliminated, red if rank 3-4, green=human, blue=AI
+  const cardBaseColor = p.eliminated ? '#555' : rank >= 3 ? '#c0392b' : (p.isAI ? '#2980b9' : '#27ae60');
 
   // --- Hanging wire + clip ---
   ctx.strokeStyle = 'rgba(255,255,255,0.5)';
@@ -596,6 +597,7 @@ function getHookTip(p) {
 }
 
 function drawHookLine(p, time) {
+  if (p.eliminated) return;
   if (p.hookState === HOOK_STATES.IDLE || p.hookState === HOOK_STATES.CHARGE) {
     // Dashed indicator line
     const angle = p.hookAngle;
@@ -666,6 +668,7 @@ function tryHookFish(p, time) {
 }
 
 function updatePlayer(p, dt, time) {
+  if (p.eliminated) return;
   switch (p.hookState) {
     case HOOK_STATES.CHARGE:
       // Swing continues while charging
@@ -993,7 +996,7 @@ function drawMenuButtons() {
 // --- Knobs ---
 function drawKnobs() {
   for (const p of players) {
-    if (p.isAI) continue;
+    if (p.isAI || p.eliminated) continue;
     const cx = p.boatX;
     const cy = knobY;
     const isActive = p.hookState === HOOK_STATES.IDLE || p.hookState === HOOK_STATES.CHARGE;
@@ -1122,12 +1125,30 @@ function endTournamentRound() {
   }
 }
 
+function eliminatePlayer(p) {
+  p.eliminated = true;
+  // Retract hook if active
+  if (p.hookState === HOOK_STATES.DROP || p.hookState === HOOK_STATES.CATCH || p.hookState === HOOK_STATES.RETRACT) {
+    if (p.caughtFish) { p.caughtFish.alive = false; p.caughtFish = null; }
+    p.hookLength = 0;
+  }
+  p.hookState = HOOK_STATES.IDLE;
+}
+
 function updatePlay(dt, time) {
   timer -= dt;
   if (timer <= 0) {
     timer = 0;
     endTournamentRound();
     return;
+  }
+
+  // Mid-round elimination: at 30s mark, eliminate 4th place
+  const elapsed = GAME_DURATION - timer;
+  const eliminatedCount = players.filter(p => p.eliminated).length;
+  if (eliminatedCount === 0 && elapsed >= 30) {
+    const sorted = [...players].sort((a, b) => b.score - a.score);
+    eliminatePlayer(sorted[3]); // 4th place
   }
 
   updateClouds(dt);
@@ -1411,7 +1432,7 @@ canvas.addEventListener('pointerdown', (e) => {
     let closest = null;
     let closestDist = KNOB_RADIUS + 15; // extra padding for touch
     for (const p of players) {
-      if (p.isAI) continue;
+      if (p.isAI || p.eliminated) continue;
       const dx = x - p.boatX;
       const dy = y - knobY;
       const dist = Math.sqrt(dx * dx + dy * dy);
