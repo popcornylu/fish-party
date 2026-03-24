@@ -78,6 +78,7 @@ const HOOK_STATES = { IDLE: 0, DROP: 1, CATCH: 2, RETRACT: 3, CHARGE: 4 };
 const CHARGE_DURATION = 1.5; // seconds to reach full charge
 const MIN_CHARGE = 0.15;     // minimum charge ratio (so even a tap casts a bit)
 const GAME_DURATION = 60;
+const HOOKS_PER_ROUND = [10, 12, 15]; // round 1, 2, 3
 const HOOK_DROP_SPEED = 4.5;
 const HOOK_RETRACT_SPEED = 6;
 const HOOK_CATCH_RETRACT_SPEED = 5;
@@ -437,6 +438,7 @@ function createPlayer(index, total) {
     chargeStartY: 0,
     lastPointerY: -1,
     eliminated: false,
+    hooksLeft: 0,
   };
 }
 
@@ -577,13 +579,14 @@ function drawPlayerCard(p, time, rank) {
   ctx.textBaseline = 'middle';
   ctx.fillText(p.score, centerX, cardTop + cardH * 0.75);
 
-  // --- Player name ---
+  // --- Player name + hooks ---
   const nameSize = Math.max(9, cardW * 0.13);
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
   ctx.font = nameSize + 'px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(p.name, centerX, cardTop + cardH * 0.9);
+  const hookInfo = p.eliminated ? p.name : p.name + ' 🪝' + p.hooksLeft;
+  ctx.fillText(hookInfo, centerX, cardTop + cardH * 0.9);
 
   ctx.restore();
 
@@ -707,14 +710,15 @@ function updatePlayer(p, dt, time) {
       if (p.hookAngle < -SWING_RANGE) { p.hookAngle = -SWING_RANGE; p.swingDir = 1; }
       p.hookLength = 0;
       if (p.isAI) {
+        if (p.hooksLeft <= 0) break; // no hooks left
         p.aiWaitTimer -= dt;
         if (p.aiWaitTimer <= 0) {
           p.hookDropAngle = p.hookAngle;
-          // AI gets a random charge level (skip visual charging)
           const aiCharge = rand(0.4, 1.0);
           p.effectiveMaxHookLength = aiCharge * p.maxHookLength;
           p.hookState = HOOK_STATES.DROP;
           p.hookLength = 0;
+          p.hooksLeft--;
           spawnBubbles(p.boatX, p.boatY + 15, 3);
         }
       }
@@ -1111,6 +1115,7 @@ function startTournamentRound(roundNum) {
     p.color = entry.color;
     p.name = entry.name;
     p.score = 0;
+    p.hooksLeft = HOOKS_PER_ROUND[roundNum - 1] || 10;
     if (p.isAI) p.aiWaitTimer = rand(1.0, 3.0);
     players.push(p);
   }
@@ -1177,6 +1182,15 @@ function updatePlay(dt, time) {
   if (eliminatedCount === 0 && elapsed >= 30) {
     const sorted = [...players].sort((a, b) => b.score - a.score);
     eliminatePlayer(sorted[3]); // 4th place
+  }
+
+  // Early round end: all non-eliminated players out of hooks and idle
+  const activePlayers = players.filter(p => !p.eliminated);
+  const allOutOfHooks = activePlayers.every(p => p.hooksLeft <= 0 && p.hookState === HOOK_STATES.IDLE);
+  if (allOutOfHooks) {
+    timer = 0;
+    endTournamentRound();
+    return;
   }
 
   updateClouds(dt);
@@ -1469,7 +1483,7 @@ canvas.addEventListener('pointerdown', (e) => {
         closestDist = dist;
       }
     }
-    if (closest && closest.hookState === HOOK_STATES.IDLE) {
+    if (closest && closest.hookState === HOOK_STATES.IDLE && closest.hooksLeft > 0) {
       closest.hookState = HOOK_STATES.CHARGE;
       closest.chargeLevel = MIN_CHARGE; // start at min; drag up to increase
       closest.chargeRings = [];
@@ -1496,6 +1510,7 @@ function releaseCharge(pointerId) {
     p.hookDropAngle = p.hookAngle;
     p.hookState = HOOK_STATES.DROP;
     p.hookLength = 0;
+    p.hooksLeft--;
     p.pointerId = -1;
     spawnBubbles(p.boatX, p.boatY + 15, 3 + Math.floor(level * 5));
   }
