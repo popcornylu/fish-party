@@ -608,6 +608,14 @@ function drawPlayerCard(p, time, rank) {
 
     ctx.save();
     ctx.translate(badgeX, badgeY);
+
+    // Red circle behind the bar
+    const circleR = cardW * 0.22;
+    ctx.fillStyle = '#c0392b';
+    ctx.beginPath();
+    ctx.arc(0, 0, circleR, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.rotate(-Math.PI / 4); // tilt other direction
 
     // Red bar with white border
