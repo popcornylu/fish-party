@@ -599,32 +599,41 @@ function drawPlayerCard(p, time, rank) {
 
   ctx.restore();
 
-  // --- Eliminated overlay: no-entry sign rotated 45° ---
+  // --- Eliminated badge: bottom-right corner with no-entry sign + text ---
   if (p.eliminated) {
-    const signR = cardW * 0.32;
-    const signX = centerX;
-    const signY = cardTop + cardH * 0.45;
-    const barW = cardW * 0.85;
-    const barH = signR * 0.45;
+    const badgeR = cardW * 0.22;
+    const badgeX = cardLeft + cardW - badgeR * 0.5;
+    const badgeY = cardTop + cardH - badgeR * 0.5;
+    const barW = badgeR * 2.2;
+    const barH = badgeR * 0.38;
 
     ctx.save();
-    ctx.translate(signX, signY);
-    ctx.rotate(Math.PI / 4); // 45 degrees
+    ctx.translate(badgeX, badgeY);
 
     // Red circle
     ctx.fillStyle = '#c0392b';
     ctx.beginPath();
-    ctx.arc(0, 0, signR, 0, Math.PI * 2);
+    ctx.arc(0, 0, badgeR, 0, Math.PI * 2);
     ctx.fill();
 
-    // White bar (longer than circle, with white border for overflow)
+    // White bar rotated 45°
+    ctx.save();
+    ctx.rotate(Math.PI / 4);
     ctx.fillStyle = '#fff';
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.roundRect(-barW / 2, -barH / 2, barW, barH, 3);
+    ctx.roundRect(-barW / 2, -barH / 2, barW, barH, 2);
     ctx.fill();
     ctx.stroke();
+    ctx.restore();
+
+    // "淘汰" text below the sign
+    ctx.fillStyle = '#c0392b';
+    ctx.font = 'bold ' + Math.max(9, cardW * 0.14) + 'px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('淘汰', 0, badgeR + 2);
 
     ctx.restore();
   }
