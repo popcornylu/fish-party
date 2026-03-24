@@ -599,6 +599,36 @@ function drawPlayerCard(p, time, rank) {
 
   ctx.restore();
 
+  // --- Eliminated overlay: no-entry sign rotated 45° ---
+  if (p.eliminated) {
+    const signR = cardW * 0.32;
+    const signX = centerX;
+    const signY = cardTop + cardH * 0.45;
+    const barW = cardW * 0.85;
+    const barH = signR * 0.45;
+
+    ctx.save();
+    ctx.translate(signX, signY);
+    ctx.rotate(Math.PI / 4); // 45 degrees
+
+    // Red circle
+    ctx.fillStyle = '#c0392b';
+    ctx.beginPath();
+    ctx.arc(0, 0, signR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // White bar (longer than circle, with white border for overflow)
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(-barW / 2, -barH / 2, barW, barH, 3);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
   // --- IDLE glow around card ---
   if (p.hookState === HOOK_STATES.IDLE) {
     const glow = 0.2 + 0.2 * Math.sin(time * 3 + p.glowPhase);
