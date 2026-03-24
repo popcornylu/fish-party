@@ -1484,13 +1484,13 @@ canvas.addEventListener('pointerdown', (e) => {
       }
     }
     if (closest && closest.hookState === HOOK_STATES.IDLE && closest.hooksLeft > 0) {
-      closest.hookState = HOOK_STATES.CHARGE;
-      closest.chargeLevel = MIN_CHARGE; // start at min; drag up to increase
-      closest.chargeRings = [];
+      // Instant cast at max power (charge mode preserved but disabled)
+      closest.effectiveMaxHookLength = closest.maxHookLength;
       closest.hookDropAngle = closest.hookAngle;
-      closest.pointerId = e.pointerId;
-      closest.chargeStartY = y;
-      closest.lastPointerY = -1; // sentinel: no move yet (quick tap)
+      closest.hookState = HOOK_STATES.DROP;
+      closest.hookLength = 0;
+      closest.hooksLeft--;
+      spawnBubbles(closest.boatX, closest.boatY + 15, 8);
     }
   } else if (screen === 'roundresult') {
     if (roundResultReady) startTournamentRound(tournamentRound + 1);
