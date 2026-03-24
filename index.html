@@ -599,41 +599,32 @@ function drawPlayerCard(p, time, rank) {
 
   ctx.restore();
 
-  // --- Eliminated badge: bottom-right corner with no-entry sign + text ---
+  // --- Eliminated badge: bottom-right corner, red bar with 淘汰, tilted -45° ---
   if (p.eliminated) {
-    const badgeR = cardW * 0.22;
-    const badgeX = cardLeft + cardW - badgeR * 0.5;
-    const badgeY = cardTop + cardH - badgeR * 0.5;
-    const barW = badgeR * 2.2;
-    const barH = badgeR * 0.38;
+    const barW = cardW * 1.1;
+    const barH = cardW * 0.28;
+    const badgeX = cardLeft + cardW - cardW * 0.15;
+    const badgeY = cardTop + cardH - cardW * 0.15;
 
     ctx.save();
     ctx.translate(badgeX, badgeY);
+    ctx.rotate(-Math.PI / 4); // tilt other direction
 
-    // Red circle
+    // Red bar with white border
     ctx.fillStyle = '#c0392b';
-    ctx.beginPath();
-    ctx.arc(0, 0, badgeR, 0, Math.PI * 2);
-    ctx.fill();
-
-    // White bar rotated 45°
-    ctx.save();
-    ctx.rotate(Math.PI / 4);
-    ctx.fillStyle = '#fff';
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.roundRect(-barW / 2, -barH / 2, barW, barH, 2);
+    ctx.roundRect(-barW / 2, -barH / 2, barW, barH, 4);
     ctx.fill();
     ctx.stroke();
-    ctx.restore();
 
-    // "淘汰" text below the sign
-    ctx.fillStyle = '#c0392b';
-    ctx.font = 'bold ' + Math.max(9, cardW * 0.14) + 'px sans-serif';
+    // 淘汰 text in white, on the bar
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + Math.max(11, barH * 0.6) + 'px sans-serif';
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText('淘汰', 0, badgeR + 2);
+    ctx.textBaseline = 'middle';
+    ctx.fillText('淘汰', 0, 0);
 
     ctx.restore();
   }
