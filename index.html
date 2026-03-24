@@ -90,10 +90,13 @@ const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12'];
 const PLAYER_NAMES = ['玩家1', '玩家2', '玩家3', '玩家4'];
 
 const FISH_TYPES = [
-  { name: 'small',  points: 10,  w: 30, h: 15, speed: 2.5, weight: 50, color: '#5dade2', finColor: '#2e86c1', escapeChance: 0.1 },
-  { name: 'medium', points: 20,  w: 45, h: 22, speed: 1.8, weight: 30, color: '#58d68d', finColor: '#28b463', escapeChance: 0.2 },
-  { name: 'large',  points: 50,  w: 65, h: 30, speed: 1.2, weight: 15, color: '#e67e22', finColor: '#d35400', escapeChance: 0.35 },
-  { name: 'golden', points: 100, w: 40, h: 20, speed: 3.5, weight: 5,  color: '#f1c40f', finColor: '#f39c12', escapeChance: 0.5 },
+  { name: 'copper',  points: 1,   w: 25, h: 12, speed: 1.5, weight: 30, color: '#b87333', finColor: '#8B5A2B', escapeChance: 0.05 },
+  { name: 'gray',    points: 10,  w: 30, h: 15, speed: 2.0, weight: 25, color: '#95a5a6', finColor: '#7f8c8d', escapeChance: 0.10 },
+  { name: 'blue',    points: 20,  w: 35, h: 17, speed: 2.5, weight: 20, color: '#5dade2', finColor: '#2e86c1', escapeChance: 0.15 },
+  { name: 'green',   points: 50,  w: 45, h: 22, speed: 2.0, weight: 12, color: '#58d68d', finColor: '#28b463', escapeChance: 0.25 },
+  { name: 'red',     points: 70,  w: 55, h: 26, speed: 1.5, weight: 7,  color: '#e74c3c', finColor: '#c0392b', escapeChance: 0.35 },
+  { name: 'golden',  points: 100, w: 40, h: 20, speed: 3.5, weight: 4,  color: '#f1c40f', finColor: '#f39c12', escapeChance: 0.50 },
+  { name: 'rainbow', points: 150, w: 45, h: 22, speed: 4.0, weight: 2,  color: '#ff69b4', finColor: '#ff1493', escapeChance: 0.60 },
 ];
 
 // --- Game State ---
@@ -264,14 +267,22 @@ function drawFish(f, time) {
     ctx.globalAlpha = 0.5 + 0.5 * Math.abs(Math.sin(time * 15));
   }
 
-  // Golden fish glow
-  if (type.name === 'golden') {
+  // Compute body/fin colors (rainbow cycles, others use type defaults)
+  let bodyColor = type.color;
+  let finColor = type.finColor;
+  if (type.name === 'rainbow') {
+    const hue = (time * 60 + f.bobPhase * 30) % 360;
+    bodyColor = `hsl(${hue}, 80%, 55%)`;
+    finColor = `hsl(${(hue + 30) % 360}, 80%, 45%)`;
+    ctx.shadowColor = bodyColor;
+    ctx.shadowBlur = 15;
+  } else if (type.name === 'golden') {
     ctx.shadowColor = '#f1c40f';
     ctx.shadowBlur = 12;
   }
 
   // Body
-  ctx.fillStyle = type.color;
+  ctx.fillStyle = bodyColor;
   ctx.beginPath();
   ctx.ellipse(0, 0, hw, hh, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -286,7 +297,7 @@ function drawFish(f, time) {
   ctx.shadowBlur = 0;
 
   // Tail
-  ctx.fillStyle = type.finColor;
+  ctx.fillStyle = finColor;
   ctx.beginPath();
   ctx.moveTo(-hw + 2, 0);
   ctx.lineTo(-hw - hh * 0.8, -hh * 0.7);
@@ -295,7 +306,7 @@ function drawFish(f, time) {
   ctx.fill();
 
   // Dorsal fin
-  ctx.fillStyle = type.finColor;
+  ctx.fillStyle = finColor;
   ctx.beginPath();
   ctx.moveTo(hw * 0.1, -hh);
   ctx.lineTo(-hw * 0.2, -hh - hh * 0.4);
