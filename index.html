@@ -115,6 +115,7 @@ let menuSlots = ['human', 'ai', 'ai', 'ai']; // each slot: 'human' | 'ai'
 layoutReady = true;
 
 // --- Tournament State ---
+let fishRushTriggered = false;
 let tournamentRound = 0;
 let tournamentBracket = [];
 let advancedPlayers = [];
@@ -229,8 +230,8 @@ function pickFishType() {
   return FISH_TYPES[0];
 }
 
-function createFish(forMenu) {
-  const type = pickFishType();
+function createFish(forMenu, forceType) {
+  const type = forceType || pickFishType();
   const fromLeft = Math.random() < 0.5;
   const minY = forMenu ? WATER_Y + 30 : WATER_Y + 25;
   const maxY = forMenu ? H - 30 : H - 30;
@@ -1123,6 +1124,7 @@ function startTournamentRound(roundNum) {
   bubbles = [];
   scoreTexts = [];
   timer = GAME_DURATION;
+  fishRushTriggered = false;
   for (let i = 0; i < 8 + playerCount * 2; i++) fishes.push(createFish(false));
   screen = 'play';
 }
@@ -1176,12 +1178,20 @@ function updatePlay(dt, time) {
     return;
   }
 
-  // Mid-round elimination: at 30s mark, eliminate 4th place
+  // Mid-round elimination: at 30s mark, eliminate 4th place + fish rush
   const elapsed = GAME_DURATION - timer;
   const eliminatedCount = players.filter(p => p.eliminated).length;
   if (eliminatedCount === 0 && elapsed >= 30) {
     const sorted = [...players].sort((a, b) => b.score - a.score);
     eliminatePlayer(sorted[3]); // 4th place
+    // Fish rush: spawn wave of golden and rainbow fish
+    if (!fishRushTriggered) {
+      fishRushTriggered = true;
+      const goldenType = FISH_TYPES.find(t => t.name === 'golden');
+      const rainbowType = FISH_TYPES.find(t => t.name === 'rainbow');
+      for (let i = 0; i < 6; i++) fishes.push(createFish(false, goldenType));
+      for (let i = 0; i < 3; i++) fishes.push(createFish(false, rainbowType));
+    }
   }
 
   // Early round end: all non-eliminated players out of hooks and idle
