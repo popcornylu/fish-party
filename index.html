@@ -220,11 +220,19 @@ function drawBackground(time) {
 }
 
 // --- Fish ---
+// Boosted weights after 30s: golden 4→15, rainbow 2→10
+const FISH_WEIGHTS_BOOST = { golden: 15, rainbow: 10 };
+
 function pickFishType() {
-  const r = Math.random() * 100;
+  const boosted = fishRushTriggered;
+  let totalWeight = 0;
+  for (const ft of FISH_TYPES) {
+    totalWeight += (boosted && FISH_WEIGHTS_BOOST[ft.name]) || ft.weight;
+  }
+  const r = Math.random() * totalWeight;
   let sum = 0;
   for (const ft of FISH_TYPES) {
-    sum += ft.weight;
+    sum += (boosted && FISH_WEIGHTS_BOOST[ft.name]) || ft.weight;
     if (r <= sum) return ft;
   }
   return FISH_TYPES[0];
