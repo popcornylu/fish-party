@@ -90,7 +90,7 @@ const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12'];
 const PLAYER_NAMES = ['玩家1', '玩家2', '玩家3', '玩家4'];
 
 const FISH_TYPES = [
-  { name: 'copper',  points: 1,   w: 25, h: 12, speed: 1.5, weight: 30, color: '#b87333', finColor: '#8B5A2B', escapeChance: 0.05 },
+  { name: 'copper',  points: 5,   w: 25, h: 12, speed: 1.5, weight: 30, color: '#b87333', finColor: '#8B5A2B', escapeChance: 0.05 },
   { name: 'gray',    points: 10,  w: 30, h: 15, speed: 2.0, weight: 25, color: '#95a5a6', finColor: '#7f8c8d', escapeChance: 0.10 },
   { name: 'blue',    points: 20,  w: 35, h: 17, speed: 2.5, weight: 20, color: '#5dade2', finColor: '#2e86c1', escapeChance: 0.15 },
   { name: 'green',   points: 50,  w: 45, h: 22, speed: 2.0, weight: 12, color: '#58d68d', finColor: '#28b463', escapeChance: 0.25 },
@@ -754,10 +754,12 @@ function updatePlayer(p, dt, time) {
         // Award score
         if (p.caughtFish) {
           const pts = p.caughtFish.type.points;
+          const fishTypeName = p.caughtFish.type.name;
+          const fishColor = p.caughtFish.type.color;
           p.score += pts;
           const stCardW = Math.min(100, W / (players.length + 1) * 0.85);
           const stCardH = stCardW * 1.6;
-          spawnScoreText(p.boatX, WATER_Y + 8 - stCardH - 15, pts, p.color);
+          spawnScoreText(p.boatX, WATER_Y + 8 - stCardH * 0.25, pts, fishColor, fishTypeName);
           spawnBubbles(p.boatX, p.boatY + 10, 4);
           p.caughtFish = null;
         }
@@ -817,8 +819,8 @@ function drawBubbles() {
 }
 
 // --- Score Texts ---
-function spawnScoreText(x, y, pts, color) {
-  scoreTexts.push({ x, y, text: '+' + pts, color, life: 1, vy: -1.5 });
+function spawnScoreText(x, y, pts, color, fishType) {
+  scoreTexts.push({ x, y, text: '+' + pts, color, fishType: fishType || '', life: 1, vy: -1.5 });
 }
 
 function updateScoreTexts(dt) {
@@ -830,13 +832,28 @@ function updateScoreTexts(dt) {
   }
 }
 
+const RAINBOW_SCORE_COLORS = ['#e74c3c', '#f1c40f', '#2ecc71', '#3498db'];
+
 function drawScoreTexts() {
   for (const s of scoreTexts) {
     ctx.globalAlpha = s.life;
-    ctx.fillStyle = s.color;
     ctx.font = 'bold 22px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(s.text, s.x, s.y);
+    if (s.fishType === 'rainbow') {
+      // Draw each character in a different color
+      const chars = s.text.split('');
+      const totalW = ctx.measureText(s.text).width;
+      let cx = s.x - totalW / 2;
+      ctx.textAlign = 'left';
+      for (let i = 0; i < chars.length; i++) {
+        ctx.fillStyle = RAINBOW_SCORE_COLORS[i % RAINBOW_SCORE_COLORS.length];
+        ctx.fillText(chars[i], cx, s.y);
+        cx += ctx.measureText(chars[i]).width;
+      }
+    } else {
+      ctx.fillStyle = s.color;
+      ctx.fillText(s.text, s.x, s.y);
+    }
   }
   ctx.globalAlpha = 1;
 }
