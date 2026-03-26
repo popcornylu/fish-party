@@ -1539,7 +1539,10 @@ canvas.addEventListener('pointerdown', (e) => {
         closestDist = dist;
       }
     }
-    if (closest && closest.hookState === HOOK_STATES.IDLE && closest.hooksLeft > 0) {
+    if (closest && closest.hookState === HOOK_STATES.DROP) {
+      // Tap again while dropping → retract
+      closest.hookState = HOOK_STATES.RETRACT;
+    } else if (closest && closest.hookState === HOOK_STATES.IDLE && closest.hooksLeft > 0) {
       // Instant cast at max power (charge mode preserved but disabled)
       closest.effectiveMaxHookLength = closest.maxHookLength;
       closest.hookDropAngle = closest.hookAngle;
