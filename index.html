@@ -45,7 +45,8 @@ function resize() {
   canvas.style.width = W + 'px';
   canvas.style.height = H + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  WATER_Y = H * 0.4;
+  const isCompact = H < 500;
+  WATER_Y = H * (isCompact ? 0.55 : 0.4);
 
   knobY = H - 50;
 
@@ -71,7 +72,7 @@ resize();
 window.addEventListener('resize', resize);
 
 // --- Version ---
-const VERSION = 'v1.3.9';
+const VERSION = 'v1.3.13';
 
 // --- Constants ---
 const HOOK_STATES = { IDLE: 0, DROP: 1, CATCH: 2, RETRACT: 3, CHARGE: 4 };
@@ -452,12 +453,15 @@ function createPlayer(index, total) {
 }
 
 function drawPlayerCard(p, time, rank) {
-  const cardW = Math.min(100, W / (players.length + 1) * 0.85);
-  const cardH = cardW * 1.6;
+  const isCompact = H < 500;
+  const cardH = isCompact ? Math.min(80, H * 0.22) : Math.min(100, W / (players.length + 1) * 0.85) * 1.6;
+  const cardW = isCompact
+    ? Math.min(cardH * 0.75, W / (players.length + 1) * 0.85)
+    : Math.min(100, W / (players.length + 1) * 0.85);
   const cornerR = 10;
   const centerX = p.cardX;
   const bobOffset = Math.sin(time * 1.5 + p.glowPhase) * 1.5;
-  const cardTop = 45 + bobOffset;
+  const cardTop = (isCompact ? 42 : 45) + bobOffset;
   const cardBottom = cardTop + cardH;
   const cardLeft = centerX - cardW / 2;
 
@@ -1011,13 +1015,14 @@ function getMenuLayout() {
   const useGrid = W > H; // 2x2 grid in landscape
   const availH = H - WATER_Y;
   const titleSize = useGrid ? Math.min(28, availH * 0.2) : 42;
+  const subtitleSize = Math.max(12, titleSize * 0.38);
   const titleGap = useGrid ? Math.min(10, availH * 0.06) : 40;
   const btnW = useGrid ? Math.min(150, W * 0.18) : 180;
-  const btnH = useGrid ? Math.min(38, (availH - titleSize - titleGap - 20) / 2.5) : 50;
+  const btnH = useGrid ? Math.min(38, (availH - titleSize - subtitleSize - titleGap - 20) / 2.5) : 50;
   const gapX = useGrid ? 12 : 0;
   const gapY = useGrid ? Math.min(8, btnH * 0.2) : 15;
   const titleY = useGrid ? WATER_Y + titleSize + 5 : H * 0.42 - 40;
-  const startY = titleY + titleGap;
+  const startY = titleY + titleSize * 0.5 + subtitleSize + titleGap;
   const lastRowY = useGrid ? startY + (btnH + gapY) : startY + 3 * (btnH + gapY);
   const startBtnY = lastRowY + btnH + gapY * 2;
   return { useGrid, btnW, btnH, gapX, gapY, startY, titleY, titleSize, startBtnY };
