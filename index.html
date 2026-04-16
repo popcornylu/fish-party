@@ -45,7 +45,7 @@ function resize() {
   canvas.style.width = W + 'px';
   canvas.style.height = H + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  WATER_Y = H * 0.28;
+  WATER_Y = H * 0.4;
 
   knobY = H - 50;
 
@@ -54,7 +54,7 @@ function resize() {
     for (const p of players) {
       const spacing = W / (players.length + 1);
       p.boatX = spacing * (p.index + 1);
-      p.boatY = WATER_Y - 5;
+      p.boatY = WATER_Y - 55;
       p.maxHookLength = (H - WATER_Y) * MAX_HOOK_LENGTH_RATIO;
       if (p.hookLength > p.maxHookLength) p.hookLength = p.maxHookLength;
     }
@@ -71,7 +71,7 @@ resize();
 window.addEventListener('resize', resize);
 
 // --- Version ---
-const VERSION = 'v1.2.5';
+const VERSION = 'v1.3.9';
 
 // --- Constants ---
 const HOOK_STATES = { IDLE: 0, DROP: 1, CATCH: 2, RETRACT: 3, CHARGE: 4 };
@@ -396,25 +396,24 @@ function drawChargeEffect(p, time) {
   }
   ctx.globalAlpha = 1;
 
-  // Charge percentage text above card
-  const cCardW = Math.min(100, W / (players.length + 1) * 0.85);
-  const cCardH = cCardW * 1.6;
-  const cCardTop = WATER_Y + 8 - cCardH;
+  // Charge percentage text above boat
   const pct = Math.floor(p.chargeLevel * 100);
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 14px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(pct + '%', p.boatX, cCardTop - 25);
+  ctx.fillText(pct + '%', p.boatX, p.boatY - 12);
 }
 
 // --- Rank Computation ---
+// Ties broken by player index so each rank slot is unique (for card positioning).
 function computeRanks() {
-  const sorted = [...players].sort((a, b) => b.score - a.score);
+  const sorted = [...players].sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.index - b.index;
+  });
   const rankMap = new Map();
-  let currentRank = 1;
   for (let i = 0; i < sorted.length; i++) {
-    if (i > 0 && sorted[i].score < sorted[i - 1].score) currentRank = i + 1;
-    rankMap.set(sorted[i].index, currentRank);
+    rankMap.set(sorted[i].index, i + 1);
   }
   return rankMap;
 }
@@ -426,7 +425,8 @@ function createPlayer(index, total) {
   return {
     index,
     boatX: bx,
-    boatY: WATER_Y - 5,
+    boatY: WATER_Y - 55,
+    cardX: bx,
     score: 0,
     hookState: HOOK_STATES.IDLE,
     hookAngle: 0,
@@ -455,33 +455,16 @@ function drawPlayerCard(p, time, rank) {
   const cardW = Math.min(100, W / (players.length + 1) * 0.85);
   const cardH = cardW * 1.6;
   const cornerR = 10;
-  const centerX = p.boatX;
-  const bobOffset = Math.sin(time * 1.5 + p.glowPhase) * 2;
-  const cardBottom = WATER_Y + 8 + bobOffset;
-  const cardTop = cardBottom - cardH;
+  const centerX = p.cardX;
+  const bobOffset = Math.sin(time * 1.5 + p.glowPhase) * 1.5;
+  const cardTop = 45 + bobOffset;
+  const cardBottom = cardTop + cardH;
   const cardLeft = centerX - cardW / 2;
 
   ctx.save();
 
-  // Card base color: gray if eliminated, red if rank 3-4, green=human, blue=AI
-  const cardBaseColor = p.eliminated ? '#555' : rank >= 3 ? '#c0392b' : (p.isAI ? '#2980b9' : '#27ae60');
-
-  // --- Hanging wire + clip ---
-  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(centerX, cardTop - 18);
-  ctx.lineTo(centerX, cardTop);
-  ctx.stroke();
-  ctx.fillStyle = 'rgba(255,255,255,0.6)';
-  ctx.beginPath();
-  ctx.arc(centerX, cardTop - 20, 3, 0, Math.PI * 2);
-  ctx.fill();
-  // Tab at top of card
-  ctx.fillStyle = cardBaseColor;
-  ctx.beginPath();
-  ctx.roundRect(centerX - 10, cardTop - 6, 20, 10, [4, 4, 0, 0]);
-  ctx.fill();
+  // Card color: gray if eliminated, pale blue for AI, pale green for human
+  const cardBaseColor = p.eliminated ? '#555' : (p.isAI ? '#5dade2' : '#58d68d');
 
   // --- Card shadow ---
   ctx.fillStyle = 'rgba(0,0,0,0.25)';
@@ -511,23 +494,23 @@ function drawPlayerCard(p, time, rank) {
   ctx.roundRect(cardLeft, cardTop, cardW, cardH, cornerR);
   ctx.stroke();
 
-  // --- Crown for 1st place ---
-  if (rank === 1) {
-    const crownSize = Math.max(14, cardW * 0.2);
-    ctx.font = crownSize + 'px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('👑', centerX, cardTop + cardH * 0.08);
-  }
+  // --- Player name at top (玩家N / 電腦N) with crown if rank 1 ---
+  const topNameSize = Math.max(10, cardW * 0.14);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold ' + topNameSize + 'px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const topLabel = rank === 1 ? '👑' + p.name : p.name;
+  ctx.fillText(topLabel, centerX, cardTop + cardH * 0.1);
 
-  // --- Avatar circle ---
-  const avatarR = cardW * 0.22;
+  // --- Avatar circle (background = P1-P4 fixed color) ---
+  const avatarR = cardW * 0.2;
   const avatarY = cardTop + cardH * 0.3;
   ctx.fillStyle = 'rgba(255,255,255,0.3)';
   ctx.beginPath();
   ctx.arc(centerX, avatarY, avatarR + 2, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.fillStyle = p.eliminated ? '#777' : PLAYER_COLORS[p.index];
   ctx.beginPath();
   ctx.arc(centerX, avatarY, avatarR, 0, Math.PI * 2);
   ctx.fill();
@@ -578,24 +561,15 @@ function drawPlayerCard(p, time, rank) {
   ctx.font = 'bold 11px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('NO.' + rank, centerX, badgeY + badgeH / 2);
+  ctx.fillText('第' + rank + '名', centerX, badgeY + badgeH / 2);
 
   // --- Score (large, prominent) ---
-  const scoreSize = Math.max(18, cardW * 0.3);
+  const scoreSize = Math.max(16, cardW * 0.26);
   ctx.fillStyle = '#fff';
   ctx.font = 'bold ' + scoreSize + 'px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(p.score, centerX, cardTop + cardH * 0.75);
-
-  // --- Player name + hooks ---
-  const nameSize = Math.max(9, cardW * 0.13);
-  ctx.fillStyle = 'rgba(255,255,255,0.85)';
-  ctx.font = nameSize + 'px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const hookInfo = p.eliminated ? p.name : p.name + ' 🪝' + p.hooksLeft;
-  ctx.fillText(hookInfo, centerX, cardTop + cardH * 0.9);
+  ctx.fillText(p.score, centerX, cardTop + cardH * 0.85);
 
   ctx.restore();
 
@@ -648,10 +622,66 @@ function drawPlayerCard(p, time, rank) {
   }
 }
 
+// --- Boat (sits on water, rod extends up to hook anchor) ---
+function drawBoat(p) {
+  if (p.eliminated) return;
+  const bx = p.boatX;
+  const waterYpos = WATER_Y;
+
+  ctx.save();
+
+  // Fishing rod from boat up to hook anchor (boatY)
+  ctx.strokeStyle = '#8B4513';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(bx, waterYpos - 3);
+  ctx.lineTo(bx, p.boatY);
+  ctx.stroke();
+
+  // Boat hull (trapezoid) at water surface
+  ctx.fillStyle = p.color;
+  ctx.beginPath();
+  ctx.moveTo(bx - 18, waterYpos - 5);
+  ctx.lineTo(bx + 18, waterYpos - 5);
+  ctx.lineTo(bx + 13, waterYpos + 6);
+  ctx.lineTo(bx - 13, waterYpos + 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Deck stripe
+  ctx.fillStyle = lerpColor(p.color, '#000000', 0.4);
+  ctx.fillRect(bx - 18, waterYpos - 5, 36, 2);
+
+  // Remaining hooks badge centered on the rod (midway between rod tip and boat)
+  const badgeW = 28;
+  const badgeH = 16;
+  const badgeX = bx - badgeW / 2;
+  const badgeY = (waterYpos - 3 + p.boatY) / 2;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.beginPath();
+  ctx.roundRect(badgeX, badgeY - badgeH / 2, badgeW, badgeH, 4);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('🪝' + p.hooksLeft, bx, badgeY);
+
+  ctx.restore();
+}
+
 function getHookTip(p) {
-  const angle = (p.hookState === HOOK_STATES.IDLE || p.hookState === HOOK_STATES.CHARGE) ? p.hookAngle : p.hookDropAngle;
+  const isIdleish = p.hookState === HOOK_STATES.IDLE || p.hookState === HOOK_STATES.CHARGE;
+  const angle = isIdleish ? p.hookAngle : p.hookDropAngle;
   const startX = p.boatX;
-  const startY = p.boatY + 5;
+  // Line emerges from boat hull bottom at all states.
+  const startY = WATER_Y - 3;
   const tipX = startX + Math.sin(angle) * p.hookLength;
   const tipY = startY + Math.cos(angle) * p.hookLength;
   return { x: tipX, y: tipY, startX, startY, angle };
@@ -660,15 +690,17 @@ function getHookTip(p) {
 function drawHookLine(p, time) {
   if (p.eliminated) return;
   if (p.hookState === HOOK_STATES.IDLE || p.hookState === HOOK_STATES.CHARGE) {
-    // Dashed indicator line
+    // Only human players see the aim guideline
+    if (p.isAI) return;
+    // Dashed indicator line (from boat hull bottom)
     const angle = p.hookAngle;
     const len = 50;
     const sx = p.boatX;
-    const sy = p.boatY + 5;
+    const sy = WATER_Y - 3;
     const ex = sx + Math.sin(angle) * len;
     const ey = sy + Math.cos(angle) * len;
     ctx.setLineDash([4, 4]);
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.75)';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(sx, sy);
@@ -808,9 +840,7 @@ function updatePlayer(p, dt, time) {
           const fishTypeName = p.caughtFish.type.name;
           const fishColor = p.caughtFish.type.color;
           p.score += pts;
-          const stCardW = Math.min(100, W / (players.length + 1) * 0.85);
-          const stCardH = stCardW * 1.6;
-          spawnScoreText(p.boatX, WATER_Y + 8 - stCardH * 0.25, pts, fishColor, fishTypeName);
+          spawnScoreText(p.boatX, p.boatY - 10, pts, fishColor, fishTypeName);
           spawnBubbles(p.boatX, p.boatY + 10, 4);
           p.caughtFish = null;
         }
@@ -1254,6 +1284,16 @@ function updatePlay(dt, time) {
   // Update players
   for (const p of players) updatePlayer(p, dt, time);
 
+  // Smoothly move cards to rank-based slots (rightmost = rank 1)
+  const rankMap = computeRanks();
+  const spacing = W / (players.length + 1);
+  const lerpK = 1 - Math.pow(0.001, dt);
+  for (const p of players) {
+    const r = rankMap.get(p.index);
+    const targetX = spacing * (players.length - r + 1);
+    p.cardX += (targetX - p.cardX) * lerpK;
+  }
+
   // Update fish
   const targetFish = 8 + playerCount * 2;
   for (let i = fishes.length - 1; i >= 0; i--) {
@@ -1277,7 +1317,8 @@ function drawPlay(time) {
     if (f.alive && !f.caught) drawFish(f, time);
   }
 
-  // Draw hook lines (behind cards)
+  // Draw boats (rod + hull) then hook lines
+  for (const p of players) drawBoat(p);
   for (const p of players) drawHookLine(p, time);
 
   // Draw player cards and charge effects
