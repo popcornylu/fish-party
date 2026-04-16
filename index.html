@@ -46,16 +46,17 @@ function resize() {
   canvas.style.height = H + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const isCompact = H < 500;
-  WATER_Y = H * (isCompact ? 0.55 : 0.4);
+  WATER_Y = H * 0.4;
 
   knobY = H - 50;
 
   // Relayout players and fish (guard: skip on initial call before vars are defined)
   if (layoutReady) {
+    const rodHeight = isCompact ? 28 : 55;
     for (const p of players) {
       const spacing = W / (players.length + 1);
       p.boatX = spacing * (p.index + 1);
-      p.boatY = WATER_Y - 55;
+      p.boatY = WATER_Y - rodHeight;
       p.maxHookLength = (H - WATER_Y) * MAX_HOOK_LENGTH_RATIO;
       if (p.hookLength > p.maxHookLength) p.hookLength = p.maxHookLength;
     }
@@ -72,7 +73,7 @@ resize();
 window.addEventListener('resize', resize);
 
 // --- Version ---
-const VERSION = 'v1.3.13';
+const VERSION = 'v1.3.15';
 
 // --- Constants ---
 const HOOK_STATES = { IDLE: 0, DROP: 1, CATCH: 2, RETRACT: 3, CHARGE: 4 };
@@ -423,10 +424,11 @@ function computeRanks() {
 function createPlayer(index, total) {
   const spacing = W / (total + 1);
   const bx = spacing * (index + 1);
+  const rodHeight = H < 500 ? 28 : 55;
   return {
     index,
     boatX: bx,
-    boatY: WATER_Y - 55,
+    boatY: WATER_Y - rodHeight,
     cardX: bx,
     score: 0,
     hookState: HOOK_STATES.IDLE,
@@ -454,7 +456,7 @@ function createPlayer(index, total) {
 
 function drawPlayerCard(p, time, rank) {
   const isCompact = H < 500;
-  const cardH = isCompact ? Math.min(80, H * 0.22) : Math.min(100, W / (players.length + 1) * 0.85) * 1.6;
+  const cardH = isCompact ? Math.min(70, H * 0.2) : Math.min(100, W / (players.length + 1) * 0.85) * 1.6;
   const cardW = isCompact
     ? Math.min(cardH * 0.75, W / (players.length + 1) * 0.85)
     : Math.min(100, W / (players.length + 1) * 0.85);
