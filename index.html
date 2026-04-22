@@ -21,6 +21,16 @@ canvas {
   touch-action: manipulation;
 }
 </style>
+<script>
+!function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug getPageViewId".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+posthog.init('phc_Dh9ycMLN77seH37mGLcrDiwUHak28t3KfhcYiGUSNbwY', {
+  api_host: 'https://us.i.posthog.com',
+  person_profiles: 'always',
+  disable_session_recording: true,
+  autocapture: false,
+  capture_pageview: true,
+});
+</script>
 </head>
 <body>
 <canvas id="game"></canvas>
@@ -73,7 +83,20 @@ resize();
 window.addEventListener('resize', resize);
 
 // --- Version ---
-const VERSION = 'v1.3.15';
+const VERSION = 'v1.4.0';
+
+// --- Telemetry ---
+function track(event, props) {
+  try {
+    if (typeof posthog === 'undefined' || !posthog.capture) return;
+    posthog.capture(event, {
+      version: VERSION,
+      orientation: window.innerWidth > window.innerHeight ? 'landscape' : 'portrait',
+      compact_mode: window.innerHeight < 500,
+      ...(props || {}),
+    });
+  } catch (e) { /* never break the game over telemetry */ }
+}
 
 // --- Constants ---
 const HOOK_STATES = { IDLE: 0, DROP: 1, CATCH: 2, RETRACT: 3, CHARGE: 4 };
@@ -125,6 +148,7 @@ let roundResults = [];
 let roundResultReady = false;
 let roundResultTimer = 0;
 let tournamentHistory = [];
+let roundStartTime = 0;
 
 // --- Utility ---
 function rand(a, b) { return a + Math.random() * (b - a); }
@@ -846,6 +870,16 @@ function updatePlayer(p, dt, time) {
           const fishTypeName = p.caughtFish.type.name;
           const fishColor = p.caughtFish.type.color;
           p.score += pts;
+          p.fishCaughtThisRound = (p.fishCaughtThisRound || 0) + 1;
+          if (!p.isAI) {
+            track('fish_caught', {
+              fish_type: fishTypeName,
+              points: pts,
+              round: tournamentRound,
+              score_so_far: p.score,
+              hooks_left: p.hooksLeft,
+            });
+          }
           spawnScoreText(p.boatX, p.boatY - 10, pts, fishColor, fishTypeName);
           spawnBubbles(p.boatX, p.boatY + 10, 4);
           p.caughtFish = null;
@@ -1200,6 +1234,7 @@ function startTournamentRound(roundNum) {
     p.name = entry.name;
     p.score = 0;
     p.hooksLeft = HOOKS_PER_ROUND[roundNum - 1] || 10;
+    p.fishCaughtThisRound = 0;
     if (p.isAI) p.aiWaitTimer = rand(1.0, 3.0);
     players.push(p);
   }
@@ -1210,6 +1245,8 @@ function startTournamentRound(roundNum) {
   fishRushTriggered = false;
   for (let i = 0; i < 8 + playerCount * 2; i++) fishes.push(createFish(false));
   screen = 'play';
+  roundStartTime = performance.now();
+  track('round_started', { round: roundNum, player_count: playerCount });
 }
 
 function endTournamentRound() {
@@ -1222,6 +1259,21 @@ function endTournamentRound() {
     results: sorted.map(p => ({ name: p.name, color: p.color, score: p.score, isAI: p.isAI })),
   });
 
+  // Telemetry: round_ended for human player(s)
+  const durationS = roundStartTime ? Math.round((performance.now() - roundStartTime) / 1000) : 0;
+  for (const p of players) {
+    if (p.isAI) continue;
+    const rank = sorted.indexOf(p) + 1;
+    track('round_ended', {
+      round: tournamentRound,
+      rank,
+      score: p.score,
+      duration_s: durationS,
+      fish_count: p.fishCaughtThisRound || 0,
+      eliminated_midround: !!p.eliminated,
+    });
+  }
+
   // Top 2 advance
   advancedPlayers = sorted.slice(0, 2).map(p => ({
     name: p.name,
@@ -1233,8 +1285,26 @@ function endTournamentRound() {
   const humansAdvanced = advancedPlayers.some(p => p.isHuman);
 
   if (tournamentRound >= 3) {
+    for (const p of players) {
+      if (p.isAI) continue;
+      track('tournament_ended', {
+        outcome: 'complete',
+        final_rank: sorted.indexOf(p) + 1,
+        final_score: p.score,
+        rounds_played: tournamentRound,
+      });
+    }
     screen = 'tournamentover';
   } else if (!humansAdvanced) {
+    for (const p of players) {
+      if (p.isAI) continue;
+      track('tournament_ended', {
+        outcome: 'eliminated',
+        final_rank: sorted.indexOf(p) + 1,
+        final_score: p.score,
+        rounds_played: tournamentRound,
+      });
+    }
     screen = 'eliminated';
   } else {
     screen = 'roundresult';
@@ -1571,6 +1641,8 @@ canvas.addEventListener('pointerdown', (e) => {
     // Check start button
     const sr = getStartButtonRect(layout);
     if (x >= sr.x && x <= sr.x + sr.w && y >= sr.y && y <= sr.y + sr.h) {
+      const humanCount = menuSlots.filter(s => s === 'human').length;
+      track('tournament_started', { player_count: 4, human_count: humanCount });
       startTournamentRound(1);
     }
   } else if (screen === 'play') {
